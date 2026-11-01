@@ -21,6 +21,13 @@ pip install -e "backend[dev]"
 
 ## Lancer les tests
 
+Validation complète (tests + intégration + scénarios navigateur) :
+
+```bash
+scripts/validate_all.sh /chemin/photos            # + vidéo et .y4m pour la capture mobile
+```
+
+
 ```bash
 cd backend
 pytest -q -p no:dash                                   # unitaires (< 2 s)

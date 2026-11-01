@@ -19,9 +19,26 @@ Téléphone ──photos──▶ Ordinateur (API locale) ──▶ COLMAP (cam�
 | 4 | Interface Web (Next.js, visualiseur Three.js) | ✅ fonctionnelle, testée de bout en bout (Playwright) |
 | 5 | Capture mobile (QR code, HTTPS local, caméra, vidéo) | ✅ testée en émulation ; à valider sur iPhone/Android réels |
 | 6 | Nettoyage non destructif, simplification re-texturée, étalonnage, mesures, Export SketchUp | ✅ fonctionnel, testé |
-| 7 | Validation complète téléphone → SketchUp | ⏳ |
+| 7 | Validation complète | ✅ sous Linux sur clone neuf (tous tests verts) ; ⏳ SketchUp, iPhone/Android réels, Windows, macOS |
 
 Ce qui a été **réellement testé** à ce jour est décrit dans `TESTING.md`.
+
+### Critères de réussite de la V1
+
+| # | Critère | État |
+|---|---|---|
+| 1 | Créer un projet | ✅ testé (interface + API) |
+| 2 | Importer de véritables photographies | ✅ galerie, glisser-déposer, capture navigateur, appareil natif, vidéo |
+| 3 | Reconstruire un modèle 3D | ✅ jeu réel Sceaux : 11/11 caméras ; photos prises dans le navigateur : 15/15 |
+| 4 | Géométrie et textures | ✅ maillage texturé (atlas photographique) |
+| 5 | Visible dans le navigateur | ✅ visualiseur Three.js, 4 modes, vues ortho |
+| 6 | Enregistrer le projet | ✅ bibliothèque locale, reprise, duplication, archivage |
+| 7 | Export OBJ | ✅ |
+| 8 | Export DAE avec textures | ✅ ZIP DAE + textures, profil Export SketchUp vérifié automatiquement |
+| 9 | DAE ouvert dans un logiciel compatible | ✅ Blender 4.5 et Assimp ; ⏳ **SketchUp à valider sur un poste réel** |
+| 10 | Erreurs gérées | ✅ messages explicites, conseils, plantages isolés, annulation, reprise |
+| 11 | Aucun service payant | ✅ uniquement des logiciels libres locaux |
+| 12 | Fonctionnement local | ✅ aucune requête Internet (vérifié par les tests) |
 La compatibilité SketchUp n'est pas encore validée sur une installation réelle de
 SketchUp ; l'import a été validé dans Blender 4.5 (importateur COLLADA officiel) et
 avec Assimp.

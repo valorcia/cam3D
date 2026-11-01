@@ -31,9 +31,15 @@
 - Étalonnage (2 points + distance), unités mm/cm/m, statut d'étalonnage affiché.
 - « Export SketchUp » : niveaux de simplification avec re-texturage, vérification.
 
-## Phase 7 — Validation
+## Phase 7 — Validation (✅ Linux ; reste : SketchUp, téléphones réels, Windows, macOS)
 - Parcours complet téléphone → ordinateur → reconstruction → DAE → SketchUp
   sur Windows 11 et macOS ; installateurs.
+
+## Prochaines étapes prioritaires
+- Valider l'import dans SketchUp (protocole dans TESTING.md) et ajuster le DAE si nécessaire.
+- Valider la capture sur iPhone et Android réels (certificat, résolution).
+- Valider l'installation sur Windows 11 et macOS ; installateur pour non-développeurs.
+- Arbre de vocabulaire COLMAP pour les jeux non ordonnés de plus de 150 photos.
 
 ## Plus tard
 - iOS/Android natifs, LiDAR, segmentation IA de l'objet, amélioration IA des

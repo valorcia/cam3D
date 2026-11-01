@@ -1,5 +1,40 @@
 # Tests
 
+## Validation complète (phase 7)
+
+`scripts/validate_all.sh <photos> [video.mp4 camera.y4m]` rejoue tout : tests
+moteur et API, intégration sur photos réelles, typage et tests de l'interface,
+puis les trois scénarios navigateur sur un serveur temporaire.
+
+Exécution du 1er novembre 2026 sur un **clone neuf** du dépôt GitHub, installé
+par `scripts/install.sh` (2 min 49) avec OpenMVS compilé par
+`scripts/build_openmvs_linux.sh` (correctifs appliqués automatiquement) :
+
+| Bloc | Résultat |
+|---|---|
+| Tests moteur + API | 43 réussis |
+| Intégration photos réelles (pipeline complet) | réussi, 2 min 45 |
+| Interface : TypeScript + vitest | 9 réussis |
+| Parcours complet (`e2e.mjs`) | 11/11 |
+| Édition, étalonnage, Export SketchUp (`e2e_edit.mjs`) | 8/8 |
+| Capture mobile HTTPS, repli HTTP, vidéo (`e2e_capture.mjs`) | 10/10 ; 15/15 caméras pour les photos prises dans le navigateur |
+| **Bilan** | **TOUT A RÉUSSI** |
+
+Cette validation sur clone neuf a révélé deux défauts invisibles dans le dossier
+de développement, tous deux corrigés : la page Bibliothèque n'était pas
+versionnée (motif `projects/` du `.gitignore` trop large) et la détection des
+outils laissait des journaux OpenMVS dans le dossier courant.
+
+### Ce qui reste à valider hors de cet environnement
+
+| Élément | Raison | Protocole |
+|---|---|---|
+| Import dans **SketchUp** | pas d'installation SketchUp ici | « Protocole de validation manuelle SketchUp » ci-dessous |
+| **iPhone** et **Android** réels | émulation Chromium seulement | installer le certificat (INSTALLATION.md), capturer 30 photos d'un objet, reconstruire, noter la résolution obtenue |
+| **Windows 11** et **macOS** | environnement Linux seulement | `install.ps1` / `install.sh`, `cam3d doctor`, puis `validate_all.sh` |
+| GPU NVIDIA (CUDA) | pas de GPU ici | vérifier la détection dans `cam3d doctor` et les durées |
+
+
 ## Tests unitaires (synthétiques, rapides)
 
 `cd backend && pytest -q -p no:dash` — 40 tests moteur + API, < 30 s. Moteur :
