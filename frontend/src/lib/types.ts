@@ -31,7 +31,7 @@ export interface Estimate {
 export interface Job {
   id: string;
   project_id: string;
-  kind: "reconstruct" | "export" | "video" | "edit" | "sketchup";
+  kind: "reconstruct" | "export" | "video" | "edit" | "sketchup" | "relay";
   params?: Record<string, string>;
   profile: string | null;
   formats: string[];

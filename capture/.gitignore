@@ -1,0 +1,7 @@
+node_modules/
+.next/
+.relay-dev/
+next-env.d.ts
+*.tsbuildinfo
+.env*.local
+.vercel

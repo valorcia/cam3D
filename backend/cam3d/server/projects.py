@@ -229,6 +229,43 @@ class ProjectStore:
         return {"name": name, "size_bytes": len(data), "width": w, "height": h,
                 "sharpness": round(sharp, 1), "brightness": round(bright, 1), "warnings": warnings}
 
+    def add_zip(self, project_id: str, filename: str, stream: BinaryIO) -> tuple[list[dict], list[dict]]:
+        """Photos packed in a ZIP (e.g. exported by cam3D Capture). Only image members are read,
+        names are flattened (no path traversal), sizes are checked before extraction."""
+        import tempfile
+        import zipfile
+
+        added: list[dict] = []
+        rejected: list[dict] = []
+        limit_total = self.settings.max_video_mb * 1024 * 1024
+        with tempfile.TemporaryFile() as tmp:
+            size = 0
+            while chunk := stream.read(4 * 1024 * 1024):
+                size += len(chunk)
+                if size > limit_total:
+                    raise ProjectError(f"Archive trop volumineuse (maximum {self.settings.max_video_mb} Mo)", 413)
+                tmp.write(chunk)
+            tmp.seek(0)
+            try:
+                zf = zipfile.ZipFile(tmp)
+            except zipfile.BadZipFile:
+                raise ProjectError("Archive ZIP illisible", 415)
+            members = [m for m in zf.infolist() if not m.is_dir() and Path(m.filename).suffix.lower() in PHOTO_EXT
+                       and not Path(m.filename).name.startswith(".")]
+            if not members:
+                raise ProjectError("Aucune photo dans cette archive", 422)
+            for m in members:
+                name = Path(m.filename.replace("\\", "/")).name
+                if m.file_size > self.settings.max_photo_mb * 1024 * 1024:
+                    rejected.append({"file": name, "error": f"Fichier trop volumineux (maximum {self.settings.max_photo_mb} Mo)", "status": 413})
+                    continue
+                try:
+                    with zf.open(m) as fh:
+                        added.append(self.add_photo(project_id, name, fh))
+                except ProjectError as e:
+                    rejected.append({"file": name, "error": str(e), "status": e.status})
+        return added, rejected
+
     def delete_photo(self, project_id: str, name: str) -> None:
         p = self.get(project_id)
         if p["status"] in ("queued", "processing"):

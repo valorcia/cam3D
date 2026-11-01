@@ -5,9 +5,21 @@ texturés, **entièrement sur votre ordinateur**, sans abonnement, sans crédits
 sans cloud. Les modèles s'exportent en **DAE (SketchUp)**, OBJ, GLB, STL et PLY.
 
 ```
-Téléphone ──photos──▶ Ordinateur (API locale) ──▶ COLMAP (caméras) ──▶ OpenMVS (dense, maillage, textures)
-                                                ──▶ nettoyage ──▶ visualiseur 3D ──▶ exports DAE / OBJ / GLB / STL / PLY
+Téléphone, n'importe où (cam3D Capture, en ligne) ──photos chiffrées / ZIP──┐
+Téléphone, même Wi-Fi (interface locale)  ──photos──────────────────────────┤
+                                                                             ▼
+Ordinateur (API locale) ──▶ COLMAP (caméras) ──▶ OpenMVS (dense, maillage, textures)
+                        ──▶ nettoyage ──▶ visualiseur 3D ──▶ exports DAE / OBJ / GLB / STL / PLY
 ```
+
+Deux façons de capturer :
+
+- **n'importe où**, sans ordinateur allumé : l'application **cam3D Capture**
+  (`capture/`, hébergée sur Vercel) garde les photos sur le téléphone, même hors
+  connexion, et les envoie **chiffrées de bout en bout** vers un relais
+  temporaire ; vous les récupérez ensuite dans cam3D avec un code de transfert
+  (ou par partage / ZIP, sans relais) ;
+- **à côté de l'ordinateur** : l'interface locale, appairée par QR code.
 
 ## État du projet
 
@@ -28,7 +40,7 @@ Ce qui a été **réellement testé** à ce jour est décrit dans `TESTING.md`.
 | # | Critère | État |
 |---|---|---|
 | 1 | Créer un projet | ✅ testé (interface + API) |
-| 2 | Importer de véritables photographies | ✅ galerie, glisser-déposer, capture navigateur, appareil natif, vidéo |
+| 2 | Importer de véritables photographies | ✅ galerie, glisser-déposer, capture navigateur, appareil natif, vidéo, capture à distance (relais chiffré), ZIP |
 | 3 | Reconstruire un modèle 3D | ✅ jeu réel Sceaux : 11/11 caméras ; photos prises dans le navigateur : 15/15 |
 | 4 | Géométrie et textures | ✅ maillage texturé (atlas photographique) |
 | 5 | Visible dans le navigateur | ✅ visualiseur Three.js, 4 modes, vues ortho |
@@ -38,7 +50,7 @@ Ce qui a été **réellement testé** à ce jour est décrit dans `TESTING.md`.
 | 9 | DAE ouvert dans un logiciel compatible | ✅ Blender 4.5 et Assimp ; ⏳ **SketchUp à valider sur un poste réel** |
 | 10 | Erreurs gérées | ✅ messages explicites, conseils, plantages isolés, annulation, reprise |
 | 11 | Aucun service payant | ✅ uniquement des logiciels libres locaux |
-| 12 | Fonctionnement local | ✅ aucune requête Internet (vérifié par les tests) |
+| 12 | Fonctionnement local | ✅ reconstruction et stockage des projets sur l'ordinateur ; le relais de capture à distance est optionnel et ne voit que des données chiffrées |
 La compatibilité SketchUp n'est pas encore validée sur une installation réelle de
 SketchUp ; l'import a été validé dans Blender 4.5 (importateur COLLADA officiel) et
 avec Assimp.
@@ -68,6 +80,7 @@ archives `exports/model_dae.zip` (DAE + textures, prêt pour SketchUp) et
 - `EXPORT_FORMATS.md` — formats d'export, profil « Export SketchUp »
 - `TESTING.md` — stratégie de tests et résultats mesurés
 - `API.md` — API locale, appairage et sécurité
+- `capture/README.md` — application de capture à distance, relais chiffré, déploiement Vercel
 - `ROADMAP.md` — phases suivantes et évolutions
 
 ## Licence et composants

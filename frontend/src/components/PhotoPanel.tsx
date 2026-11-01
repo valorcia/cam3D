@@ -27,7 +27,7 @@ export function PhotoPanel({ project, locked, onChange }: { project: ProjectDeta
   const videoInput = useRef<HTMLInputElement>(null);
   const [videoProgress, setVideoProgress] = useState<number | null>(null);
   const [qr, setQr] = useState<{ urls: string[]; code: string } | null>(null);
-  const videoJob = project.active_job?.kind === "video" ? project.active_job : null;
+  const videoJob = project.active_job?.kind === "video" || project.active_job?.kind === "relay" ? project.active_job : null;
   const liveVideo = useApp((st) => (videoJob ? st.jobEvents[videoJob.id] : undefined));
   const lastVideoEvent = liveVideo?.[liveVideo.length - 1];
 
@@ -66,12 +66,12 @@ export function PhotoPanel({ project, locked, onChange }: { project: ProjectDeta
         <div
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}
-          onDrop={(e) => { e.preventDefault(); setDrag(false); upload(Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name))); }}
+          onDrop={(e) => { e.preventDefault(); setDrag(false); upload(Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/") || /\.(heic|heif|zip)$/i.test(f.name))); }}
           className={`card flex flex-col items-center gap-3 border-dashed px-6 py-8 text-center transition-colors ${drag ? "border-accent bg-accent/5" : ""}`}
         >
           <IconUpload className="h-7 w-7 text-accent" />
-          <p className="text-sm text-muted">Glissez vos photos ici ou</p>
-          <input ref={input} type="file" accept="image/*,.heic,.heif" multiple hidden data-testid="photo-input"
+          <p className="text-sm text-muted">Glissez vos photos (ou un ZIP exporté du téléphone) ici ou</p>
+          <input ref={input} type="file" accept="image/*,.heic,.heif,.zip,application/zip" multiple hidden data-testid="photo-input"
             onChange={(e) => { upload(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
           <div className="flex flex-wrap justify-center gap-2">
             <button className="btn-primary" disabled={locked || progress !== null} onClick={() => input.current?.click()}>
@@ -93,7 +93,7 @@ export function PhotoPanel({ project, locked, onChange }: { project: ProjectDeta
           {videoProgress !== null && <p className="text-xs text-muted">Envoi de la vidéo {Math.round(videoProgress * 100)} %</p>}
           {videoJob && (
             <div className="w-full max-w-sm text-xs text-muted" data-testid="video-job">
-              <p className="flex items-center justify-center gap-2"><Spinner className="h-3 w-3" /> {lastVideoEvent?.message || "Extraction des images de la vidéo…"}</p>
+              <p className="flex items-center justify-center gap-2"><Spinner className="h-3 w-3" /> {lastVideoEvent?.message || (videoJob.kind === "relay" ? "Récupération des photos du téléphone…" : "Extraction des images de la vidéo…")}</p>
               {lastVideoEvent?.progress != null && <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10"><div className="h-full bg-accent" style={{ width: `${lastVideoEvent.progress * 100}%` }} /></div>}
             </div>
           )}

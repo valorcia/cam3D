@@ -136,7 +136,7 @@ class JobManager:
                formats: list[str] | tuple[str, ...] = ("obj", "glb", "dae"), resume: bool = False,
                params: dict | None = None) -> dict:
         p = self.projects.get(project_id)
-        if kind not in ("reconstruct", "export", "video", "edit", "sketchup"):
+        if kind not in ("reconstruct", "export", "video", "edit", "sketchup", "relay"):
             raise ProjectError("Type de tâche inconnu")
         if profile not in PROFILES:
             raise ProjectError(f"Profil inconnu : {profile}")
@@ -339,6 +339,7 @@ class JobManager:
             finally:
                 self._procs.pop(jid, None)
         (proj / "processed" / f"edits_pending_{jid}.json").unlink(missing_ok=True)
+        (proj / "processed" / "relay_code.json").unlink(missing_ok=True)
         cancelled = jid in self._cancel_requested
         self._cancel_requested.discard(jid)
         (proj / "processed" / "CANCEL").unlink(missing_ok=True)
@@ -355,12 +356,14 @@ class JobManager:
                 f"Le processus de traitement s'est arrêté de façon inattendue (code {proc.returncode}). "
                 f"Consultez logs/worker.log.")
             values.update(status="failed", error=err, error_stage=(result or {}).get("error_stage"))
-        if j["kind"] == "video" and values["status"] == "succeeded":
-            # import BEFORE publishing "succeeded": clients must see every frame once the job is done
+        if j["kind"] in ("video", "relay") and values["status"] == "succeeded":
+            # import BEFORE publishing "succeeded": clients must see every photo once the job is done
             added = self._import_frames(pid, (result or {}).get("frames") or [])
-            values["stages"] = {**(values.get("stages") or {}), "video": {"status": "finished", "frames_added": added}}
-            if added < 3:
+            values["stages"] = {**(values.get("stages") or {}), j["kind"]: {"status": "finished", "frames_added": added}}
+            if j["kind"] == "video" and added < 3:
                 values.update(status="failed", error=f"Seulement {added} image(s) valide(s) extraite(s) de la vidéo")
+            if j["kind"] == "relay" and added == 0:
+                values.update(status="failed", error="Aucune photo valide dans ce scan")
         self.db.update("jobs", {"id": jid}, values)
         if j["kind"] == "edit" and values["status"] == "succeeded":
             try:

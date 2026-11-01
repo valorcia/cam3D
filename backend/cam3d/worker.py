@@ -36,7 +36,7 @@ def _event_to_dict(ev) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="cam3d.worker")
-    p.add_argument("kind", choices=["reconstruct", "export", "video", "edit", "sketchup"])
+    p.add_argument("kind", choices=["reconstruct", "export", "video", "edit", "sketchup", "relay"])
     p.add_argument("project")
     p.add_argument("--profile", default="fast")
     p.add_argument("--formats", default="obj,glb,dae")
@@ -93,6 +93,33 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:  # noqa: BLE001
             lg.fail(str(e))
             emit({"type": "result", "result": {"success": False, "error": str(e), "error_stage": "prepare"}})
+            return 3
+        finally:
+            lg.close()
+
+    if a.kind == "relay":
+        import httpx
+
+        from .engine.events import Stage, StageLogger
+        from .server.relay import RelayError, download_scan, parse_code
+
+        lg = StageLogger(Stage.PREPARE, project / "logs", lambda ev: emit(_event_to_dict(ev)))
+        pending = project / "processed" / "relay_code.json"
+        try:
+            code = parse_code(json.loads(pending.read_text(encoding="utf-8"))["code"])
+            pending.unlink(missing_ok=True)  # the key is not kept on disk longer than needed
+            lg.start("Téléchargement et déchiffrement des photos du téléphone")
+            with httpx.Client(follow_redirects=False, headers={"User-Agent": "cam3D"}) as client:
+                res = download_scan(code, project / "processed" / "relay", client,
+                                    on_progress=lambda i, n, name: lg.progress(i / n, f"Photo {i}/{n} : {name}"), cancel=cancel)
+            lg.finish(f"{res['count']} photo(s) déchiffrée(s) et vérifiée(s)", count=res["count"])
+            emit({"type": "result", "result": {"success": True, "frames": res["files"], "name": res["name"]}})
+            return 0
+        except (RelayError, httpx.HTTPError, ValueError, KeyError) as e:
+            pending.unlink(missing_ok=True)
+            msg = str(e) if isinstance(e, RelayError) else f"Relais injoignable ou réponse invalide ({type(e).__name__})"
+            lg.fail(msg)
+            emit({"type": "result", "result": {"success": False, "error": msg, "error_stage": "prepare"}})
             return 3
         finally:
             lg.close()

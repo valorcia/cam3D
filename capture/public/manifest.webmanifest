@@ -1,0 +1,12 @@
+{
+  "name": "cam3D Capture",
+  "short_name": "cam3D",
+  "description": "Capture photo pour scans 3D, chiffrée, transférée ensuite vers cam3D sur votre ordinateur",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0b0e",
+  "theme_color": "#0a0b0e",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

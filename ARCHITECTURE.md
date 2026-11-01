@@ -66,6 +66,25 @@ Règles structurantes :
    lorsqu'il est mesuré (image i/N, caméra i/N, carte de profondeur i/N) ;
    sinon l'UI affiche l'étape courante et un indicateur d'activité.
 
+## Capture à distance (`capture/`)
+
+Application Next.js déployée sur Vercel, indépendante du moteur : elle ne
+reconstruit rien. Pages statiques mises en cache par un service worker
+(fonctionnement hors connexion), photos dans IndexedDB, routes `/api/relay/*`
+qui ne délivrent que des jetons d'envoi limités (Vercel Blob) à qui possède
+`RELAY_ACCESS_KEY`. Chiffrement de bout en bout (AES-256-GCM, clé par scan,
+chemin en donnée associée) implémenté à l'identique en TypeScript
+(`capture/src/lib/crypto.ts`) et en Python (`backend/cam3d/server/relay.py`),
+vérifié par un vecteur de test commun. Côté PC, l'import est une tâche
+`relay` : téléchargement limité aux hôtes Vercel Blob (pas de SSRF, pas de
+redirection), déchiffrement, contrôle SHA-256, puis même validation qu'un envoi
+de photos. La clé n'est écrite sur le disque que le temps de la tâche.
+
+Pourquoi pas tout le moteur en ligne : les fonctions Vercel n'ont ni COLMAP ni
+OpenMVS, sont limitées à quelques minutes et n'ont pas de disque persistant ;
+et les photos sortiraient de chez l'utilisateur. Le relais ne transporte donc
+que des données chiffrées, de manière temporaire (7 jours).
+
 ## Dossier projet
 
 ```

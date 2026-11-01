@@ -83,6 +83,7 @@ export const api = {
   putThumbnail: (id: string, blob: Blob) =>
     request<{ ok: boolean }>(`/api/projects/${id}/thumbnail.jpg`, { method: "PUT", body: blob }),
 
+  relayImport: (code: string) => request<{ project: Project; job: Job }>("/api/relay/import", json("POST", { code })),
   pairSession: (next = "") =>
     request<{ id: string; code: string; expires_at: number; urls: string[]; https_urls: string[]; secure: boolean }>(
       `/api/pair/sessions${next ? `?next=${encodeURIComponent(next)}` : ""}`, json("POST")),

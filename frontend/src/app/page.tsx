@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { IconCube, IconFolder, IconGear, IconImages, IconPlus } from "@/components/Icons";
+import { IconCube, IconFolder, IconGear, IconImages, IconPhone, IconPlus } from "@/components/Icons";
 import { ProjectCard } from "@/components/ProjectCard";
 import { EmptyState, ErrorBox, Spinner } from "@/components/ui";
 import { api, uploadPhotos } from "@/lib/api";
@@ -45,6 +45,7 @@ export default function Home() {
   const actions = [
     { key: "new", icon: IconPlus, title: "Nouveau scan", text: "Créer un projet et ajouter des photos", onClick: newScan, primary: true },
     { key: "import", icon: IconImages, title: "Importer des photos", text: "Depuis l’ordinateur ou la galerie", onClick: () => fileInput.current?.click() },
+    { key: "phone", icon: IconPhone, title: "Depuis le téléphone", text: "Scan capturé avec cam3D Capture", href: "/import/" },
     { key: "projects", icon: IconFolder, title: "Mes projets", text: "Bibliothèque de vos modèles", href: "/projects/" },
     ...(whoami?.role === "desktop" ? [{ key: "settings", icon: IconGear, title: "Paramètres", text: "Matériel, moteurs, téléphone", href: "/settings/" }] : []),
   ];
@@ -61,7 +62,7 @@ export default function Home() {
       )}
       {error && <ErrorBox>{error}</ErrorBox>}
 
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => importPhotos(e.target.files)} data-testid="home-import-input" />
         {actions.map((a, i) => {
           const inner = (

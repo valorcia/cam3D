@@ -35,6 +35,9 @@
 - Parcours complet téléphone → ordinateur → reconstruction → DAE → SketchUp
   sur Windows 11 et macOS ; installateurs.
 
+## Capture à distance ✅ (livrée, testée avec un relais local)
+- Reste : déploiement Vercel (Blob store, variables), essai sur téléphones réels.
+
 ## Prochaines étapes prioritaires
 - Valider l'import dans SketchUp (protocole dans TESTING.md) et ajuster le DAE si nécessaire.
 - Valider la capture sur iPhone et Android réels (certificat, résolution).

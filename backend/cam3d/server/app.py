@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
 import time
 from urllib.parse import quote
 from contextlib import asynccontextmanager
@@ -63,6 +64,11 @@ class ReconstructRequest(BaseModel):
 class ExportRequest(BaseModel):
     formats: list[str] = Field(default_factory=list)
     sketchup_level: str | None = None
+
+
+class RelayImport(BaseModel):
+    code: str = Field(min_length=10, max_length=4000)
+    project_id: str | None = None
 
 
 class EditRequest(BaseModel):
@@ -274,6 +280,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         added, rejected = [], []
         for f in files:
             try:
+                if (f.filename or "").lower().endswith(".zip"):
+                    a, r = await run_in_threadpool(projects.add_zip, pid, f.filename, f.file)
+                    added += a
+                    rejected += r
+                    continue
                 info = await run_in_threadpool(projects.add_photo, pid, f.filename or "photo.jpg", f.file)
                 added.append(info)
             except ProjectError as e:
@@ -341,6 +352,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             dest.unlink(missing_ok=True)
             raise HTTPException(400, "Fichier vide")
         return jobs.submit(pid, "video", "fast", [], params={"video": dest.name})
+
+    @app.post("/api/relay/import", status_code=202)
+    def relay_import(body: RelayImport, _: Principal = Depends(principal)):
+        """Scan captured with cam3D Capture: download + decrypt on this computer (background job)."""
+        from .relay import RelayError, parse_code
+
+        try:
+            code = parse_code(body.code)
+        except RelayError as e:
+            raise HTTPException(400, str(e))
+        p = projects.get(body.project_id) if body.project_id else projects.create(code.name)
+        if jobs.active_job(p["id"]):
+            raise HTTPException(409, "Un traitement est déjà en cours pour ce projet")
+        pending = projects.path(p["id"]) / "processed" / "relay_code.json"
+        pending.parent.mkdir(parents=True, exist_ok=True)
+        pending.write_text(json.dumps({"code": body.code}), encoding="utf-8")
+        try:
+            os.chmod(pending, 0o600)
+        except OSError:
+            pass
+        job = jobs.submit(p["id"], "relay", "fast", [])
+        return {"project": projects.get(p["id"]), "job": job}
 
     # ------------------------------------------------------------------ jobs
     @app.post("/api/projects/{pid}/reconstruct", status_code=202)

@@ -169,6 +169,39 @@ Les tests ont révélé et fait corriger : une tâche vidéo publiée « réussi
 avant l'import de ses images, une image floue conservée au détriment de la
 version nette de la même vue, et des erreurs 401 parasites avant appairage.
 
+## Capture à distance (`capture/tests/e2e_remote.mjs`)
+
+Application cam3D Capture en production locale (`next start`, relais local à la
+place de Vercel Blob), cam3D sur l'ordinateur, Chromium en émulation Pixel 7
+avec caméra simulée. 1er novembre 2026, **10/10 scénarios réussis** :
+
+| Scénario | Résultat |
+|---|---|
+| Clé du relais : mauvaise clé refusée, bonne clé acceptée | OK |
+| 12 photos prises à la caméra, envoyées chiffrées automatiquement | 19 s |
+| Le relais ne contient que des objets `C3D1` chiffrés, ni JPEG ni nom de fichier en clair | OK |
+| Hors connexion : 2 photos de plus, application rechargée sans réseau (service worker), photos toujours là | OK |
+| Retour du réseau : envoi automatique des 2 photos en attente | OK |
+| Ordinateur : lien `/t/#code` → cam3D local → import ; code retiré de la barre d'adresse | 14 photos |
+| Reconstruction des photos prises à distance | **14/14 caméras**, 0,29 px |
+| Sans relais : ZIP exporté du téléphone importé dans un projet | 14 photos |
+| Retrait immédiat du relais depuis le téléphone | OK |
+| Aucune erreur console hors période sans réseau | OK |
+
+Tests associés : `capture` (vitest, 3 tests : vecteur commun avec Python,
+mauvaise clé, fichier interverti, altération, code de transfert) et
+`backend/tests/test_relay.py` (4 tests : vecteur commun, hôtes autorisés et
+refus SSRF, import vérifié à l'octet près, fichier altéré et mauvaise clé
+refusés, ZIP avec chemins piégés).
+
+Bugs trouvés par ces tests et corrigés : un contrôle du relais échoué hors
+connexion restait mémorisé et bloquait tout envoi au retour du réseau ; le
+retrait d'un scan du relais était annulé par la synchronisation suivante ; les
+routes API redirigeaient (barre oblique finale), ce que le PC refuse.
+
+**Non testé ici** : le vrai Vercel Blob (nécessite la création du stockage sur
+votre compte) et de vrais téléphones.
+
 ## Édition, mesures, Export SketchUp (`frontend/tests/e2e_edit.mjs`)
 
 Sur un projet réellement reconstruit (15 photos prises dans le navigateur),

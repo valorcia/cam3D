@@ -54,6 +54,16 @@ mesurées et renvoyées en avertissements (`floue`, `trop sombre`, `surexposée`
 | GET | `/api/tls/ca.crt` | public : certificat de l'autorité locale (à installer sur le téléphone) |
 | POST | `/api/projects/{id}/video` (multipart `file`) | vidéo ≤ `CAM3D_MAX_VIDEO_MB` (2 Go) ; tâche `video` : extraction FFmpeg, images nettes et distinctes ajoutées au projet ; la vidéo originale est conservée dans `originals/videos/` |
 
+## Import depuis cam3D Capture
+
+| Méthode | Route | Rôle |
+|---|---|---|
+| POST | `/api/relay/import {code, project_id?}` | crée un projet (ou complète `project_id`) et lance la tâche `relay` : téléchargement depuis Vercel Blob, déchiffrement, vérification, import |
+| POST | `/api/projects/{id}/photos` avec un `.zip` | importe les photos d'une archive (exportée du téléphone), noms aplatis, tailles vérifiées |
+
+`CAM3D_RELAY_ALLOW=http://localhost:3100` autorise un relais de développement ;
+sinon seules les adresses `https://*.public.blob.vercel-storage.com` sont acceptées.
+
 ## Édition et étalonnage
 
 | Méthode | Route | Rôle |
