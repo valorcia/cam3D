@@ -23,6 +23,8 @@ class Settings:
     # Requests from these client addresses are the desktop user (full rights).
     # Everything else (phones on the LAN) must pair first and present a token.
     trusted_hosts: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost"})
+    # Host header names accepted for desktop rights (anti DNS-rebinding). Tests add "testserver".
+    local_host_names: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
     pairing_ttl_s: int = 600            # a pairing code is valid 10 minutes
     device_token_ttl_s: int = 7 * 86400  # a paired phone stays authorised 7 days
     worker_python: str = sys.executable

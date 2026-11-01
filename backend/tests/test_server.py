@@ -9,9 +9,14 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from cam3d.server.app import create_app
-from cam3d.server.config import Settings
+from cam3d.server.config import Settings as _Settings
 
 STUB = [sys.executable, str(Path(__file__).with_name("stub_worker.py"))]
+
+
+def Settings(**kw):  # noqa: N802 - test settings: TestClient sends "Host: testserver"
+    kw.setdefault("local_host_names", frozenset({"127.0.0.1", "localhost", "::1", "[::1]", "testserver"}))
+    return _Settings(**kw)
 
 
 def jpeg_bytes(seed=0, size=(800, 600), blur=False) -> bytes:
@@ -443,3 +448,31 @@ def test_edit_undo_reset_and_calibrated_export(tmp_path, cube_model):
         # removing the calibration also removes the exports made with it
         c.delete(f"/api/projects/{pid}/calibration")
         assert c.get(f"/api/projects/{pid}/exports").json() == []
+
+
+# ---------------------------------------------------------------- browser-based attacks from other web sites
+def test_dns_rebinding_gets_no_desktop_rights(app):
+    with TestClient(app, client=("127.0.0.1", 50000)) as c:
+        assert c.get("/api/whoami", headers={"Host": "127.0.0.1:8765"}).json()["role"] == "desktop"
+        assert c.get("/api/whoami", headers={"Host": "localhost:8765"}).json()["role"] == "desktop"
+        # attacker.example resolved to 127.0.0.1 by DNS rebinding: same client address, foreign Host
+        assert c.get("/api/whoami", headers={"Host": "attacker.example:8765"}).json()["role"] == "anonymous"
+        assert c.get("/api/projects", headers={"Host": "attacker.example:8765"}).status_code == 401
+
+
+def test_cross_site_requests_are_refused(desktop):
+    evil = {"Origin": "https://attacker.example"}
+    r = desktop.post("/api/projects", json={"name": "x"}, headers=evil)
+    assert r.status_code == 403
+    r = desktop.post("/api/projects", data={"name": "x"}, headers=evil)  # "simple" form POST, no preflight
+    assert r.status_code == 403
+    assert desktop.post("/api/pair/sessions", headers=evil).status_code == 403
+    # same-origin and the dev UI (localhost:3000) still work, as do non-browser clients
+    assert desktop.post("/api/projects", json={"name": "ok"}, headers={"Origin": "http://testserver"}).status_code == 201
+    assert desktop.post("/api/projects", json={"name": "ok"}, headers={"Origin": "http://localhost:3000", "Host": "127.0.0.1:8765"}).status_code == 201
+    assert desktop.post("/api/projects", json={"name": "ok"}).status_code == 201
+    # cross-site WebSocket hijacking
+    from starlette.websockets import WebSocketDisconnect
+    with pytest.raises(WebSocketDisconnect):
+        with desktop.websocket_connect("/api/events", headers=evil) as ws:
+            ws.receive_json()

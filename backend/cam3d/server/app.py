@@ -103,6 +103,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(CORSMiddleware, allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
                        allow_methods=["*"], allow_headers=["*"])
 
+    def _origin_allowed(origin: str | None, host_header: str) -> bool:
+        """Same-origin requests, the dev UI on localhost, or non-browser clients (no Origin)."""
+        if not origin:
+            return True
+        from urllib.parse import urlsplit
+
+        o = urlsplit(origin)
+        if o.netloc.lower() == (host_header or "").lower():
+            return True
+        return _host_name(o.netloc) in LOCAL_NAMES and _host_name(host_header) in LOCAL_NAMES
+
+    @app.middleware("http")
+    async def csrf_guard(request: Request, call_next):
+        # Browsers attach Origin to cross-site POST/PUT/DELETE: refuse those not coming from cam3D itself
+        # (protects against forged form submissions from other web sites, which need no CORS preflight).
+        if request.method not in ("GET", "HEAD", "OPTIONS") and not _origin_allowed(request.headers.get("origin"), request.headers.get("host", "")):
+            return JSONResponse({"detail": "Origine de la requête refusée"}, status_code=403)
+        return await call_next(request)
+
     @app.exception_handler(ProjectError)
     async def _project_error(_: Request, e: ProjectError):
         return JSONResponse({"detail": str(e)}, status_code=e.status)
@@ -112,8 +131,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse({"detail": str(e)}, status_code=e.status)
 
     # ------------------------------------------------------------------ auth
+    LOCAL_NAMES = set(settings.local_host_names)
+
+    def _host_name(value: str) -> str:
+        value = (value or "").strip().lower()
+        if value.startswith("["):
+            return value.split("]")[0] + "]"
+        return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+
     def _principal_from(host: str, headers, query, cookies) -> Principal | None:
-        if host in settings.trusted_hosts:
+        # Desktop rights need a loopback client AND a loopback Host header: a web page using
+        # DNS rebinding reaches 127.0.0.1 under its own domain name and is refused here.
+        if host in settings.trusted_hosts and _host_name(headers.get("host", "")) in LOCAL_NAMES:
             return Principal("desktop", "Cet ordinateur")
         token = None
         auth = headers.get("authorization", "")
@@ -547,8 +576,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.websocket("/api/events")
     async def events(ws: WebSocket):
         p = _principal_from(ws.client.host if ws.client else "", ws.headers, ws.query_params, ws.cookies)
-        if p is None:
-            await ws.close(code=4401)
+        if p is None or not _origin_allowed(ws.headers.get("origin"), ws.headers.get("host", "")):
+            await ws.close(code=4401)  # also blocks cross-site WebSocket hijacking from other pages
             return
         await ws.accept()
         q = jobs.subscribe()
