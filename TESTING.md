@@ -2,7 +2,7 @@
 
 ## Tests unitaires (synthétiques, rapides)
 
-`cd backend && pytest -q -p no:dash` — 13 tests, < 2 s :
+`cd backend && pytest -q -p no:dash` — 13 tests moteur, < 2 s :
 
 - profils distincts, erreurs sur profil inconnu ;
 - détection matérielle et découverte d'outils sans exception ;
@@ -15,6 +15,54 @@
   relative existante, `assimp info` ;
 - exports des 5 formats (zips contenant textures, GLB rechargé avec texture) ;
 - préparation : exclusion d'une image floue, fichiers non image ignorés.
+
+## Tests de l'API (`tests/test_server.py`, < 10 s)
+
+Exécutés contre l'application FastAPI réelle (TestClient) avec une base SQLite
+et un dossier de données temporaires :
+
+- CRUD projets : arborescence créée, `metadata.json`, renommage, duplication,
+  archivage, suppression avec confirmation obligatoire, identifiants malformés ;
+- validation des envois : image valide, nom dangereux assaini, image floue
+  acceptée avec avertissement, faux JPEG, PDF, résolution trop faible, fichier
+  trop gros, noms en double jamais écrasés ;
+- appairage : refus sans jeton, code faux, code réutilisé, approbation
+  explicite, jeton remis une seule fois, suppression interdite au téléphone,
+  révocation, rejet ;
+- tâches : < 3 photos refusé, succès avec événements WebSocket, échec puis
+  relance avec reprise, plantage du worker signalé sans affecter le serveur,
+  annulation douce, arrêt forcé d'un worker qui ignore l'annulation, file
+  d'attente une tâche à la fois, tâches interrompues marquées au redémarrage,
+  estimation absente sans historique ;
+- export par le **vrai** worker (`python -m cam3d.worker export`) : zips DAE/OBJ,
+  STL sans texture, téléchargement, protection contre la traversée de chemin.
+
+Les tests de tâches utilisent `tests/stub_worker.py`, un double de test qui
+parle le protocole du worker (millisecondes au lieu de minutes). Il n'est
+jamais utilisé par l'application. La reconstruction réelle via l'API est
+vérifiée par l'essai HTTP ci-dessous.
+
+## Essai HTTP de bout en bout (serveur réel)
+
+Serveur `cam3d serve --host 0.0.0.0` ; « téléphone » simulé en joignant
+l'adresse réseau local de la machine (donc traité comme appareil distant).
+Résultats du 1er novembre 2026 :
+
+| Étape | Résultat |
+|---|---|
+| Accès sans jeton | 401 |
+| Appairage : code → demande en attente → approbation sur l'ordinateur → jeton | OK |
+| Envoi des 11 photos (25 Mo) | 200, 11 acceptées, 1,8 s |
+| Estimation avant tout historique | `null` (aucune durée inventée) |
+| Reconstruction RAPIDE suivie par WebSocket | succès, 48 événements, 8 étapes |
+| Modèle | 149 001 faces, 16,9 Mo (maillage + textures) |
+| `preview.glb` / `model_dae.zip` | 200 ; zip = `model.dae` + `textures/model_0.jpg` |
+| Estimation après 1 reconstruction | 149 s pour 11 images, fondée sur 1 exécution mesurée |
+| Suppression demandée par le téléphone | 403 (réservée à l'ordinateur) |
+
+Ce même essai a révélé que le jeton du WebSocket apparaissait dans le journal
+d'accès d'uvicorn : corrigé (cookie HttpOnly + masquage `token=`/`secret=`,
+testé par `test_log_filter_redacts_tokens`).
 
 ## Test d'intégration (photos réelles)
 

@@ -23,6 +23,7 @@ dependencies = [
     "aiofiles>=23",
     "pydantic>=2",
     "websockets>=12",
+    "qrcode>=7.4",
 ]
 
 [project.optional-dependencies]

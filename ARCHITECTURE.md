@@ -3,7 +3,13 @@
 ## Vue d'ensemble
 
 ```
-smartphone (PWA) ──HTTPS local──▶ backend/cam3d/server  (FastAPI, phase 3)
+smartphone (PWA) ──HTTP(S) local──▶ backend/cam3d/server  (FastAPI)
+                               ├─ app.py        routes /api (voir API.md), WebSocket /api/events
+                               ├─ projects.py   bibliothèque, validation des photos, metadata.json
+                               ├─ jobs.py       file d'attente, worker isolé, annulation, reprise, estimations
+                               ├─ security.py   appairage (code + approbation), jetons hachés
+                               ├─ db.py         SQLite (projects, photos, jobs, devices)
+                               └─ ../worker.py  processus de reconstruction (protocole JSON « CAM3D … »)
                                         │
                                         ▼
                                backend/cam3d/engine  (Python, indépendant du Web)
@@ -44,8 +50,9 @@ Règles structurantes :
 ## Dossier projet
 
 ```
-projects/<id>/
-  metadata.json            (géré par le serveur, phase 3)
+<CAM3D_DATA_DIR>/cam3d.sqlite3   index (projets, photos, tâches, appareils)
+<CAM3D_DATA_DIR>/projects/<id>/
+  metadata.json            copie lisible de la fiche projet (dossier autoportant)
   pipeline_result.json     résultat de la dernière reconstruction
   originals/               photos d'origine
   processed/               images de travail, database.db, sparse/, dense/, mvs/, stages/*.json
@@ -82,6 +89,8 @@ terminée avec le même profil n'est pas recalculée.
 | Sortie de TextureMesh | **GLB** plutôt qu'OBJ | l'écrivain OBJ d'OpenMVS 2.3.0 plante sur un maillage mono-texture (binaires officiels non corrigés) ; l'écrivain glTF est fiable. `mesh_io` relit les deux. |
 | Nettoyage | trimesh/Open3D en Python, par sous-ensembles de faces | conserve UV et textures sans ré-échantillonnage. |
 | Filtrage géométrique | avant texturage, sur le PLY brut | les surfaces « ciel » d'OpenMVS sont supprimées avant de gaspiller l'atlas de textures. |
+| Exécution des traitements | un **processus séparé** par tâche, groupe de processus dédié | un plantage natif (OpenMVS, COLMAP) ou un arrêt forcé n'affecte pas le serveur ; l'annulation tue aussi les sous-processus OpenMVS. |
+| Sécurité réseau local | appairage par code + approbation explicite sur l'ordinateur, jeton porteur | pas de compte ni de cloud ; une adresse IP du réseau local ne suffit jamais pour accéder aux projets. |
 | Simplification avec textures | **après** maillage, **avant** texturage (`--target-face-num` d'OpenMVS) | décimer un maillage déjà texturé dégrade les UV. Les niveaux de simplification de « Export SketchUp » (phase 6) re-texturent un maillage décimé. |
 
 ## Licences des composants

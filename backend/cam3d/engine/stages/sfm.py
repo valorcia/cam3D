@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -98,6 +99,27 @@ def run_sfm(
     threads = num_threads if num_threads > 0 else (os.cpu_count() or 2)
     device = _device(use_gpu)
     token = pycolmap.CancellationToken() if hasattr(pycolmap, "CancellationToken") else None
+    tk = {"cancellation_token": token} if token is not None else {}
+    stop_watch = threading.Event()
+
+    def _watch() -> None:  # propagate our CancelToken to COLMAP's native token
+        while not stop_watch.is_set():
+            if cancel is not None and cancel.cancelled and token is not None:
+                token.cancel()
+                return
+            stop_watch.wait(0.3)
+
+    watcher = threading.Thread(target=_watch, daemon=True)
+    watcher.start()
+    try:
+        return _run_sfm_body(work_dir, images_dir, db_path, sparse_dir, image_names, n, profile, logger, cancel,
+                             threads, device, tk)
+    finally:
+        stop_watch.set()
+
+
+def _run_sfm_body(work_dir, images_dir, db_path, sparse_dir, image_names, n, profile, logger, cancel,
+                  threads, device, tk) -> SfmResult:
 
     # --- 1. features -------------------------------------------------------
     ext = pycolmap.FeatureExtractionOptions()
@@ -112,7 +134,7 @@ def run_sfm(
     logger.log(f"Extraction SIFT (max {profile.sift_max_features} points, image max {ext.max_image_size}px, {threads} threads)")
     pycolmap.extract_features(
         db_path, images_dir, image_names=image_names, camera_mode=pycolmap.CameraMode.AUTO,
-        reader_options=reader, extraction_options=ext, device=device,
+        reader_options=reader, extraction_options=ext, device=device, **tk,
     )
     if cancel:
         cancel.check()
@@ -128,9 +150,9 @@ def run_sfm(
         popt.overlap = 10
         popt.quadratic_overlap = True
         popt.loop_detection = False  # needs a vocab tree file; see PHOTOGRAMMETRY.md
-        pycolmap.match_sequential(db_path, matching_options=mopt, pairing_options=popt, device=device)
+        pycolmap.match_sequential(db_path, matching_options=mopt, pairing_options=popt, device=device, **tk)
     else:
-        pycolmap.match_exhaustive(db_path, matching_options=mopt, device=device)
+        pycolmap.match_exhaustive(db_path, matching_options=mopt, device=device, **tk)
     if cancel:
         cancel.check()
 
@@ -149,12 +171,10 @@ def run_sfm(
     def _next_image() -> None:
         progress["done"] += 1
         logger.progress(min(progress["done"] / n, 0.99), f"Caméra enregistrée {progress['done']}/{n}")
-        if cancel and cancel.cancelled and token is not None:
-            token.cancel()
 
     logger.log("Reconstruction incrémentale (poses + triangulation + ajustement de faisceaux)")
     recs = pycolmap.incremental_mapping(
-        db_path, images_dir, sparse_dir, options=mopts, next_image_callback=_next_image,
+        db_path, images_dir, sparse_dir, options=mopts, next_image_callback=_next_image, **tk,
     )
     if cancel:
         cancel.check()

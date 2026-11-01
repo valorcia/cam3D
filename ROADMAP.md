@@ -1,6 +1,6 @@
 # Feuille de route
 
-## Phase 3 — Backend (suivant)
+## Phase 3 — Backend ✅ (livré)
 - FastAPI : projets (CRUD, renommage, duplication, suppression, archivage), import
   de photos (validation, limites de taille), lancement/annulation/relance des
   reconstructions, journaux, exports à la demande.

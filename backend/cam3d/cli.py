@@ -3,12 +3,14 @@
     cam3d doctor                              hardware + tools diagnostic
     cam3d reconstruct IMAGES_DIR OUT_DIR [--profile fast|high|ultra] [--export obj,glb,dae,...]
     cam3d export PROJECT_DIR --formats obj,dae  re-export an existing project's model
-    cam3d serve [--host 0.0.0.0 --port 8765]  start the local API (phase 3)
+    cam3d serve [--host 0.0.0.0 --port 8765]  start the local API
 """
 from __future__ import annotations
 
 import argparse
 import json
+import logging
+import re
 import sys
 import time
 from pathlib import Path
@@ -94,13 +96,33 @@ def cmd_export(args) -> int:
     return 0
 
 
+class RedactTokensFilter(logging.Filter):
+    """Masks ``token=`` / ``secret=`` query values in server logs."""
+
+    _re = re.compile(r"(token=|secret=)[^&\s\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(self._re.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args)
+        record.msg = self._re.sub(r"\1***", str(record.msg))
+        return True
+
+
 def cmd_serve(args) -> int:
     try:
         import uvicorn
-        from .server.app import create_app  # phase 3
+        from .server.app import create_app
     except ImportError as e:
         print(f"Serveur indisponible : {e}")
         return 2
+    for name in ("uvicorn.access", "uvicorn.error"):
+        logging.getLogger(name).addFilter(RedactTokensFilter())
+    from .server.network import lan_addresses
+
+    if args.host in ("0.0.0.0", "::"):
+        for ip in lan_addresses():
+            print(f"cam3D accessible sur le réseau local : http://{ip}:{args.port}  (appairage requis)")
+    print(f"Interface sur cet ordinateur : http://127.0.0.1:{args.port}")
     uvicorn.run(create_app(), host=args.host, port=args.port)
     return 0
 

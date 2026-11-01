@@ -15,7 +15,7 @@ Téléphone ──photos──▶ Ordinateur (API locale) ──▶ COLMAP (cam�
 |---|---|---|
 | 1 | Audit technique, choix d'architecture | ✅ terminé (voir `ARCHITECTURE.md`) |
 | 2 | **Moteur de reconstruction réel** : photos → OBJ texturé → DAE | ✅ fonctionnel, testé sur un jeu de photos réel |
-| 3 | API locale FastAPI, gestion de projets et de tâches | ⏳ à venir |
+| 3 | API locale FastAPI, projets, tâches, appairage | ✅ fonctionnel, testé (voir `API.md`) |
 | 4 | Interface Web (Next.js, visualiseur Three.js) | ⏳ |
 | 5 | Capture mobile (PWA, QR code, HTTPS local) | ⏳ |
 | 6 | Profils qualité avancés, nettoyage interactif, étalonnage, mesures | ⏳ (profils déjà en place) |
@@ -34,6 +34,7 @@ sudo ./scripts/build_openmvs_linux.sh     # Linux : compile OpenMVS (macOS : bre
 source .venv/bin/activate
 cam3d doctor                              # matériel + outils détectés
 cam3d reconstruct /chemin/photos /chemin/projet --profile fast --export obj,dae,glb
+cam3d serve --host 0.0.0.0              # API locale : http://127.0.0.1:8765/docs
 ```
 
 Le projet produit `meshes/model.obj`, `textures/`, `previews/model.glb` et les
@@ -48,6 +49,7 @@ archives `exports/model_dae.zip` (DAE + textures, prêt pour SketchUp) et
 - `PHOTOGRAMMETRY.md` — pipeline de reconstruction, profils, paramètres réels
 - `EXPORT_FORMATS.md` — formats d'export, profil « Export SketchUp »
 - `TESTING.md` — stratégie de tests et résultats mesurés
+- `API.md` — API locale, appairage et sécurité
 - `ROADMAP.md` — phases suivantes et évolutions
 
 ## Licence et composants
