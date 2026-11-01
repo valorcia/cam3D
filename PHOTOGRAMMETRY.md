@@ -56,7 +56,7 @@ Jeu « Sceaux Castle » (11 photos 2832×2128, openMVG) :
 | Profil | SfM | Dense | Maillage | Texturage | Total | Résultat |
 |---|---|---|---|---|---|---|
 | RAPIDE | ≈ 30 s | ≈ 40 s | ≈ 45 s | ≈ 10 s | **126 s** | 11/11 caméras, 464 k points, 149 k faces, atlas 2048² |
-| HAUTE QUALITÉ | voir TESTING.md | | | | | |
+| HAUTE QUALITÉ | 131 s | 448 s | 79 s | 46 s | **732 s** | 11/11 caméras, 1,03 M points, 581 k faces, atlas 4096² |
 
 Ces durées sont des mesures ; l'application n'affichera des estimations que
 lorsqu'un historique local existera (phase 3).
