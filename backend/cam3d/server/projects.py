@@ -61,6 +61,7 @@ class ProjectStore:
         row["calibration"] = json.loads(row["calibration"]) if row.get("calibration") else None
         row["has_model"] = (self.path(project_id) / "previews" / "model.glb").exists()
         row["has_thumbnail"] = (self.path(project_id) / "previews" / "thumb.jpg").exists()
+        row["thumbnail_3d"] = (self.path(project_id) / "previews" / "thumb_3d").exists()
         return row
 
     def _touch(self, project_id: str, **values) -> None:
@@ -297,4 +298,5 @@ class ProjectStore:
         img = img.convert("RGB")
         img.thumbnail((512, 512))
         img.save(self.path(project_id) / "previews" / "thumb.jpg", "JPEG", quality=85)
+        (self.path(project_id) / "previews" / "thumb_3d").write_text("1", encoding="utf-8")  # rendered from the model
         self._touch(project_id)

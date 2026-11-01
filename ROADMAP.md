@@ -9,7 +9,7 @@
 - SQLite pour les métadonnées, fichiers sur disque (`projects/`).
 - Historique des durées par profil pour afficher des estimations fondées.
 
-## Phase 4 — Interface Web
+## Phase 4 — Interface Web ✅ (livrée)
 - Next.js + TypeScript + Tailwind + Zustand ; mode sombre ; responsive.
 - Tableau de bord, bibliothèque (miniatures générées à partir du GLB),
   suivi des étapes, visualiseur Three.js (texturé / sans texture / wireframe /

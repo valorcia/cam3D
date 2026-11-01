@@ -88,7 +88,7 @@ def cmd_export(args) -> int:
     model = load_obj(obj)
     formats = tuple(f.strip() for f in args.formats.split(",") if f.strip())
     lg = StageLogger(Stage.EXPORT, project / "logs", _print_event)
-    res = run_exports(model, project / "exports", args.name, formats, lg, point_cloud=project / "reconstruction" / "dense.ply")
+    res = run_exports(model, project / "exports", args.name, formats, lg, point_cloud=project / "reconstruction" / "dense_aligned.ply")
     lg.close()
     print()
     for r in res:

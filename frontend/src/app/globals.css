@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0a0b0e;
+  --color-surface: #121419;
+  --color-surface-2: #181b22;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-strong: rgb(255 255 255 / 0.14);
+  --color-text: #eceef3;
+  --color-muted: #9aa0ad;
+  --color-faint: #6b7180;
+  --color-accent: #8ab4ff;
+  --color-accent-strong: #5b8cff;
+  --color-ok: #4ade80;
+  --color-warn: #fbbf24;
+  --color-danger: #f87171;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html { color-scheme: dark; }
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@utility card { @apply rounded-2xl border border-line bg-surface; }
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium
+    transition-[background,transform,opacity] duration-150 active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none
+    focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
+}
+@utility btn-primary { @apply btn bg-accent-strong text-white hover:bg-accent; }
+@utility btn-ghost { @apply btn border border-line-strong bg-surface-2 text-text hover:bg-white/10; }
+@utility btn-danger { @apply btn border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20; }
+@utility input {
+  @apply w-full rounded-xl border border-line-strong bg-surface-2 px-3.5 py-2.5 text-sm text-text
+    placeholder:text-faint focus:border-accent focus:outline-none;
+}
+@utility chip { @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium; }
+
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.animate-in { animation: fade-up 0.25s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }

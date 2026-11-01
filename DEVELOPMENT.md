@@ -7,7 +7,7 @@ backend/            package Python `cam3d` (moteur + CLI + serveur à venir), te
   cam3d/engine/     moteur de reconstruction (aucune dépendance Web)
   cam3d/cli.py      commandes `cam3d doctor|reconstruct|export|serve`
   tests/            tests unitaires (synthétiques) + test d'intégration (photos réelles)
-frontend/           application Next.js (phase 4)
+frontend/           interface Next.js (voir frontend/README.md)
 scripts/            install.sh / install.ps1 / start.sh / build_openmvs_linux.sh, patches, validation Blender
 third_party/        outils externes installés localement (ignoré par git)
 ```
@@ -26,6 +26,22 @@ cd backend
 pytest -q -p no:dash                                   # unitaires (< 2 s)
 CAM3D_TEST_DATASET=/chemin/photos pytest -q -m slow    # intégration réelle (~2-3 min, profil RAPIDE)
 ```
+
+## Interface Web
+
+```bash
+cd frontend && npm ci
+npm run dev            # http://localhost:3000, API sur :8765 (cam3d serve dans un autre terminal)
+npm run lint && npm test
+npm run build          # out/ servi par cam3d serve sur http://127.0.0.1:8765
+```
+
+Règles d'interface :
+
+- un bouton visible fonctionne ; une fonction pas encore livrée n'a pas de bouton ;
+- pas de pourcentage sans mesure (`StageView.progress` vient du moteur) ;
+- aucune ressource chargée depuis Internet ;
+- textes en français, cibles tactiles ≥ 40 px, navigation basse sur téléphone.
 
 ## Conventions
 

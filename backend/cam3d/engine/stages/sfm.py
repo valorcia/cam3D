@@ -36,6 +36,7 @@ class SfmResult:
     num_models: int
     up_vector: list[float]       # estimated world "up" (unit) from camera orientations
     centroid: list[float]
+    camera_center: list[float] | None = None  # mean of camera centres (to know which side was photographed)
 
 
 def _device(use_gpu: bool) -> "pycolmap.Device":
@@ -200,6 +201,8 @@ def _run_sfm_body(work_dir, images_dir, db_path, sparse_dir, image_names, n, pro
 
     up = estimate_up_vector(best)
     centroid = np.asarray(best.compute_centroid(0.0, 1.0)).tolist()
+    centers = [np.asarray(im.projection_center()) for im in best.images.values() if im.has_pose]
+    camera_center = np.mean(centers, axis=0).tolist() if centers else None
     res = SfmResult(
         sparse_dir=str(out0),
         num_images_total=n,
@@ -210,6 +213,7 @@ def _run_sfm_body(work_dir, images_dir, db_path, sparse_dir, image_names, n, pro
         num_models=len(recs),
         up_vector=up.tolist(),
         centroid=centroid,
+        camera_center=camera_center,
     )
     (work_dir / "sfm.json").write_text(json.dumps(asdict(res), indent=2), encoding="utf-8")
     msg = (f"{res.num_registered}/{n} caméras, {res.num_points} points 3D, "

@@ -11,6 +11,15 @@ base en y = 0, échelle non étalonnée tant que `unit_scale` est absent).
 | STL | `exports/<nom>.stl` (binaire) | oui | non | **non** | Y-up | note explicite : pas de textures |
 | PLY | `exports/<nom>.ply` (+ `<nom>_pointcloud.ply`) | maillage binaire | non | non | Y-up | nuage dense fourni à part |
 
+## Orientation
+
+Avant tout export, le modèle est remis dans un repère canonique : verticale
+estimée, murs dominants alignés sur les axes, côté photographié vers l'avant,
+base posée au sol, centré. Dans SketchUp (Z vers le haut), la façade
+photographiée fait face à l'axe vert négatif (vue « Face ») et les murs sont
+parallèles aux axes rouge et vert. L'alignement n'est appliqué que si une
+orientation dominante est détectée (objets organiques : seule la verticale est corrigée).
+
 ## DAE pour SketchUp — ce que contient le fichier
 
 - `<asset>` : `<up_axis>Z_UP</up_axis>`, `<unit meter="1" name="meter"/>`,

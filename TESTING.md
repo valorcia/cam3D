@@ -2,7 +2,7 @@
 
 ## Tests unitaires (synthétiques, rapides)
 
-`cd backend && pytest -q -p no:dash` — 13 tests moteur, < 2 s :
+`cd backend && pytest -q -p no:dash` — 30 tests moteur + API, < 10 s. Moteur :
 
 - profils distincts, erreurs sur profil inconnu ;
 - détection matérielle et découverte d'outils sans exception ;
@@ -14,7 +14,9 @@
 - écrivain DAE : Z_UP, unité mètre, UV set 0, normales, `UVSET0`, texture
   relative existante, `assimp info` ;
 - exports des 5 formats (zips contenant textures, GLB rechargé avec texture) ;
-- préparation : exclusion d'une image floue, fichiers non image ignorés.
+- préparation : exclusion d'une image floue, fichiers non image ignorés ;
+- alignement des murs sur les axes et face photographiée vers +Z (boîte tournée de 30°) ;
+- sorties de texturage jamais confondues avec le maillage d'entrée ; nuage de points compact relu par Open3D.
 
 ## Tests de l'API (`tests/test_server.py`, < 10 s)
 
@@ -63,6 +65,39 @@ Résultats du 1er novembre 2026 :
 Ce même essai a révélé que le jeton du WebSocket apparaissait dans le journal
 d'accès d'uvicorn : corrigé (cookie HttpOnly + masquage `token=`/`secret=`,
 testé par `test_log_filter_redacts_tokens`).
+
+## Interface Web
+
+- `npm test` (vitest) : formatage, repli des événements en étapes (aucun
+  pourcentage sans mesure), conseils d'échec.
+- `npm run lint` : vérification TypeScript stricte.
+- `node tests/e2e.mjs` (Playwright + Chromium, serveur réel, reconstruction
+  réelle). Dernière exécution le 1er novembre 2026, **11/11 scénarios réussis** :
+
+| Scénario | Durée |
+|---|---|
+| Accueil : actions, état du moteur (WebSocket connecté) | 0,8 s |
+| Nouveau scan + import des 11 photos réelles par le sélecteur de fichiers | 1,4 s |
+| Rejet d'un faux JPEG avec message clair | < 0,1 s |
+| Reconstruction RAPIDE lancée depuis l'interface, 8 étapes suivies jusqu'à « Exportation » terminée ; aucune estimation affichée sans historique | 151 s |
+| Visualiseur : modèle chargé, rendu WebGL non vide ; modes texturé, sans texture, filaire, nuage ; ortho face et dessus | 11 s |
+| Miniature 3D enregistrée automatiquement | — |
+| Téléchargement du ZIP SketchUp : `model.dae` + `textures/` ; génération d'un STL à la demande | 1,9 s |
+| Bibliothèque : carte avec miniature, 11 photos, « Modèle prêt », taille | 0,3 s |
+| Paramètres : diagnostic matériel et moteurs | 0,2 s |
+| Téléphone (profil Pixel 7, adresse réseau local) : redirection vers l'appairage, code saisi, demande approuvée sur l'ordinateur, bibliothèque et modèle 3D visibles, suppression refusée (403) | 6,6 s |
+| Aucune requête hors réseau local, aucune erreur console | — |
+
+Les captures d'écran sont produites dans `tests/screenshots/` (non versionnées).
+Ces tests ont révélé et fait corriger : une bascule d'onglet automatique
+déroutante, un rendu 3D continu (3 cœurs CPU en rendu logiciel, batterie des
+téléphones), et un alignement des murs non appliqué sur un scan réel (seuil de
+confiance trop strict).
+
+Le DAE téléchargé par l'interface a ensuite été importé dans Blender 4.5 :
+148 769 faces, UV présentes, texture 2048² trouvée, emprise X ±5,26, Y ±2,34,
+Z 0→6,21 : modèle posé au sol, façade parallèle à l'axe X, tournée vers −Y
+(vue « Face » de SketchUp).
 
 ## Test d'intégration (photos réelles)
 

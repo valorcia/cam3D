@@ -18,4 +18,7 @@ if (-not $env:CAM3D_OPENMVS_DIR -and -not (Test-Path "third_party\openmvs\bin\De
   Write-Host "décompressez-la dans third_party\openmvs\ (ou définissez CAM3D_OPENMVS_DIR)."
 }
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { Write-Host "FFmpeg absent (import vidéo) : https://ffmpeg.org/download.html" }
+if (Get-Command npm -ErrorAction SilentlyContinue) {
+  Push-Location frontend; npm ci --no-audit --no-fund; $env:NEXT_TELEMETRY_DISABLED = "1"; npm run build; Pop-Location
+} else { Write-Host "Node.js absent : interface Web non construite (https://nodejs.org)." }
 & ".venv\Scripts\cam3d.exe" doctor

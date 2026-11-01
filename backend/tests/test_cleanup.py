@@ -41,3 +41,26 @@ def test_canonical_transform_grounds_model(cube_model, tmp_path):
     np.testing.assert_allclose(lo, [-0.5, 0.0, -0.5], atol=1e-9)
     np.testing.assert_allclose(hi, [0.5, 1.0, 0.5], atol=1e-9)
     assert cube_model.parts[0].uv is not None
+
+
+def test_manhattan_alignment_and_front_side(texture_file):
+    """A box rotated by 30° about the vertical must come back axis-aligned,
+    with the side the cameras looked at facing +Z."""
+    from cam3d.engine.stages.cleanup import _rot_y
+
+    part = make_cube_part("box", texture=texture_file)
+    part.vertices = part.vertices * np.array([4.0, 1.0, 1.0])  # elongated box: long side along X
+    model = TexturedModel(parts=[part])
+    R = _rot_y(np.radians(30))
+    model.apply_transform(R)
+    # cameras stand in front of the long side, i.e. originally at +Z, rotated with the scene
+    cam = (R[:3, :3] @ np.array([0.0, 0.0, 10.0]))
+    M = canonical_transform(model, np.array([0.0, 1.0, 0.0]), cam)
+    model.apply_transform(M)
+    lo, hi = model.bounds()
+    size = hi - lo
+    np.testing.assert_allclose(sorted(size), [1.0, 1.0, 4.0], atol=1e-6)   # axis-aligned again
+    assert size[0] == max(size)                                              # long side along X (front)
+    cam_after = M[:3, :3] @ cam + M[:3, 3]
+    assert cam_after[2] > hi[2]                                              # cameras on +Z side
+    np.testing.assert_allclose(lo[1], 0.0, atol=1e-9)

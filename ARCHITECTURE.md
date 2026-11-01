@@ -29,8 +29,27 @@ smartphone (PWA) ──HTTP(S) local──▶ backend/cam3d/server  (FastAPI)
                                    export.py     OBJ / GLB / STL / PLY / DAE (+ zip)
                                         │
                                         ▼
-                               frontend/ (Next.js + Three.js, phase 4)
+                               frontend/ (Next.js export statique, servi par FastAPI sur la même origine)
+                               ├─ src/app/          accueil, projets, projet ?id=&tab=, paramètres, appairage
+                               ├─ src/components/   Viewer3D (R3F), panneaux photos / reconstruction / exports
+                               └─ src/lib/          client API, store Zustand + WebSocket /api/events
 ```
+
+Interface :
+
+- **Même origine** : `cam3d serve` sert `frontend/out/` et `/api`. Le cookie
+  HttpOnly du téléphone fonctionne pour images, modèles et WebSocket, sans CORS.
+- **Aucune ressource externe** : pas de police distante, pas de CDN, décodeur
+  Draco désactivé, pas d'environnement HDR téléchargé. Vérifié par le test
+  Playwright (zéro requête hors réseau local).
+- **Progression honnête** : une barre n'est affichée que si l'événement porte
+  une progression mesurée ; sinon un indicateur d'activité. Les estimations de
+  durée ne s'affichent que si l'historique local existe.
+- **Visualiseur** : charge `previews/model.glb` (aperçu ≤ 250 000 faces,
+  re-texturé) ; le modèle complet est chargé à la demande. Texturé non éclairé
+  (les photos contiennent déjà l'éclairage réel), « sans texture » éclairé,
+  filaire, nuage de points aligné (≤ 500 000 points). La miniature de la
+  bibliothèque est un rendu du modèle, capturé automatiquement au premier affichage.
 
 Règles structurantes :
 
@@ -56,10 +75,13 @@ Règles structurantes :
   pipeline_result.json     résultat de la dernière reconstruction
   originals/               photos d'origine
   processed/               images de travail, database.db, sparse/, dense/, mvs/, stages/*.json
-  reconstruction/          sparse.ply, dense.ply
+  reconstruction/          sparse.ply, dense.ply (repère OpenMVS), dense_aligned.ply (repère du modèle)
   meshes/model.obj|mtl     modèle texturé nettoyé, repère canonique (Y haut, base en y=0)
   textures/model_<i>.jpg
-  previews/model.glb       aperçu navigateur
+  previews/model.glb       aperçu navigateur (≤ 250 000 faces, re-texturé si décimé)
+  previews/model_full.glb  modèle complet (seulement si l'aperçu est décimé)
+  previews/pointcloud.ply  nuage dense aligné sur le modèle, ≤ 500 000 points (float32 + RGB)
+  previews/thumb.jpg       miniature (photo, puis rendu 3D)
   exports/                 archives DAE/OBJ, GLB, STL, PLY, exports.json
   logs/<étape>.log, pipeline.log
 ```
@@ -72,6 +94,13 @@ terminée avec le même profil n'est pas recalculée.
 - Repère interne : **Y vers le haut**, main droite, modèle centré en XZ, point le
   plus bas en y = 0. Le vecteur « haut » est estimé à partir des orientations des
   caméras (moyenne des axes −Y caméra) : fiable pour une capture à main levée.
+- **Alignement « Manhattan »** : l'orientation horizontale dominante des surfaces
+  verticales (murs, côtés d'un meuble) est mesurée par un histogramme pondéré par
+  l'aire (modulo 90°, affiné sous le degré) et alignée sur les axes X/Z ; il n'est
+  appliqué que si au moins ~20 % de l'aire des murs partage la même orientation
+  au-delà du hasard. Puis un quart de tour place le côté photographié (centre moyen
+  des caméras) vers **+Z** : la vue « Face » du visualiseur montre ce que
+  l'utilisateur a photographié et, dans SketchUp, les murs suivent les axes rouge/vert.
 - Échelle : la photogrammétrie monoculaire n'a **pas d'échelle métrique**.
   `TexturedModel.unit_scale` reste `None` tant que l'utilisateur n'a pas étalonné
   (phase 6). Les exports l'indiquent dans leur note.

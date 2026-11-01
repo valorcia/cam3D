@@ -85,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         lg = StageLogger(Stage.EXPORT, project / "logs", lambda ev: emit(_event_to_dict(ev)))
         try:
             res = run_exports(model, project / "exports", "model", formats, lg, cancel,
-                              point_cloud=project / "reconstruction" / "dense.ply", unit_scale=model.unit_scale)
+                              point_cloud=project / "reconstruction" / "dense_aligned.ply", unit_scale=model.unit_scale)
         finally:
             lg.close()
         emit({"type": "result", "result": {"success": True, "exports": [asdict(r) for r in res]}})

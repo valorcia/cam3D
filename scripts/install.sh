@@ -27,6 +27,13 @@ if ! command -v DensifyPointCloud >/dev/null 2>&1 && [ ! -x /opt/openmvs/bin/Ope
 fi
 command -v ffmpeg >/dev/null 2>&1 || echo "FFmpeg absent (nécessaire pour l'import vidéo) : apt install ffmpeg / brew install ffmpeg"
 echo
+echo "==> Interface Web"
+if command -v npm >/dev/null 2>&1; then
+  ( cd frontend && npm ci --no-audit --no-fund && NEXT_TELEMETRY_DISABLED=1 npm run build )
+else
+  echo "Node.js absent : l'API fonctionne, mais l'interface Web ne sera pas construite (https://nodejs.org, version 20+)."
+fi
+echo
 cam3d doctor || true
 echo
 echo "Installation terminée. Démarrage : ./scripts/start.sh"

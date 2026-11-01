@@ -23,6 +23,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+
+import numpy as np
 import time
 import traceback
 from dataclasses import dataclass, asdict, field
@@ -32,13 +34,88 @@ from . import __name__ as _pkg  # noqa: F401
 from .events import CancelToken, CancelledError, EventCallback, Stage, StageEvent, StageLogger
 from .mesh_io import TexturedModel, load_model, write_obj
 from .profiles import QualityProfile, get_profile
-from .stages.cleanup import run_cleanup
-from .stages.export import run_exports, ExportResult, export_glb
-from .stages.mvs import DenseResult, MeshResult, TextureResult, run_densify, run_mesh, run_refine, run_texture
+from .stages.cleanup import remove_small_components, run_cleanup
+from .stages.export import ExportResult, export_glb, run_exports
+from .stages.mvs import (DenseResult, MeshResult, TextureResult, decimate_mesh, run_densify, run_mesh, run_refine,
+                         run_texture)
 from .stages.prepare import prepare_images
 from .stages.sfm import SfmResult, run_sfm
 from .subprocess_utils import ToolError
 from .tools import ToolRegistry, discover_tools
+
+PREVIEW_MAX_FACES = 250_000      # above this, the browser preview is a decimated, re-textured copy
+PREVIEW_TARGET_FACES = 200_000
+PREVIEW_MAX_POINTS = 500_000     # point cloud shown in the viewer (≈7.5 Mo)
+
+
+class _LogOnly:
+    """Logger adapter: sub-steps of a stage are reported as log lines only."""
+
+    def __init__(self, parent: StageLogger) -> None:
+        self.p = parent
+
+    def start(self, message: str = "") -> None:
+        if message:
+            self.p.log(message)
+
+    def log(self, message: str) -> None:
+        self.p.log(message)
+
+    def progress(self, value: float, message: str = "") -> None:
+        pass
+
+    def raw(self, line: str) -> None:
+        self.p.raw(line)
+
+    def finish(self, message: str = "", **_) -> float:
+        if message:
+            self.p.log(message)
+        return 0.0
+
+    def fail(self, message: str, **_) -> None:
+        self.p.log(message)
+
+    def skip(self, message: str) -> None:
+        self.p.log(message)
+
+
+def write_aligned_pointclouds(dense_ply: Path, transform: np.ndarray, full_out: Path, preview_out: Path,
+                              max_points: int = PREVIEW_MAX_POINTS) -> int:
+    """Dense cloud expressed in the model's canonical frame (full + subsampled copy)."""
+    import open3d as o3d
+
+    pc = o3d.io.read_point_cloud(str(dense_ply))
+    n = len(pc.points)
+    if n == 0:
+        return 0
+    pc.transform(np.asarray(transform, dtype=np.float64))
+    pc.normals = o3d.utility.Vector3dVector(np.zeros((0, 3)))
+    o3d.io.write_point_cloud(str(full_out), pc, write_ascii=False)
+    if n > max_points:
+        pc = pc.random_down_sample(max_points / n)
+    write_ply_points(preview_out, np.asarray(pc.points), np.asarray(pc.colors) if pc.has_colors() else None)
+    return len(pc.points)
+
+
+def write_ply_points(path: Path, xyz: np.ndarray, rgb01: np.ndarray | None) -> None:
+    """Compact binary PLY: float32 xyz (+ uint8 rgb) = 15 bytes/point."""
+    n = len(xyz)
+    fields = [("x", "<f4"), ("y", "<f4"), ("z", "<f4")]
+    if rgb01 is not None and len(rgb01) == n:
+        fields += [("red", "u1"), ("green", "u1"), ("blue", "u1")]
+    arr = np.empty(n, dtype=fields)
+    arr["x"], arr["y"], arr["z"] = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+    header = ["ply", "format binary_little_endian 1.0", f"element vertex {n}",
+              "property float x", "property float y", "property float z"]
+    if len(fields) == 6:
+        c = np.clip(np.round(rgb01 * 255), 0, 255).astype(np.uint8)
+        arr["red"], arr["green"], arr["blue"] = c[:, 0], c[:, 1], c[:, 2]
+        header += ["property uchar red", "property uchar green", "property uchar blue"]
+    header.append("end_header")
+    with open(path, "wb") as fh:
+        fh.write(("\n".join(header) + "\n").encode("ascii"))
+        fh.write(arr.tobytes())
+
 
 ALL_STAGES = [Stage.PREPARE, Stage.SFM, Stage.DENSE, Stage.MESH, Stage.REFINE, Stage.TEXTURE, Stage.CLEANUP, Stage.EXPORT]
 
@@ -231,22 +308,53 @@ class ReconstructionPipeline:
                     lg.close()
                 save(current, asdict(tex))
 
-            # 7. cleanup + canonical frame -----------------------------------
+            # 7. cleanup + canonical frame + previews ------------------------
             current = Stage.CLEANUP
             lg = self._logger(current, project)
             try:
                 model = load_model(Path(tex.obj_path))
-                run_cleanup(model, lg, sfm.up_vector, self.cancel, report_path=work / "cleanup.json")
+                rep = run_cleanup(model, lg, sfm.up_vector, self.cancel, report_path=work / "cleanup.json",
+                                  camera_center=sfm.camera_center)
+                M = np.asarray(rep.transform)
+                sub = _LogOnly(lg)
+                # persist the canonical textured model inside the project
+                for old in list((project / "meshes").glob(f"{model_name}*")) + list((project / "textures").glob(f"{model_name}*")):
+                    old.unlink()
+                for old in (project / "previews").glob("model*.glb"):
+                    old.unlink()
+                textures = write_obj(model, project / "meshes" / f"{model_name}.obj", texture_dir=project / "textures",
+                                     texture_rel="../textures/")
+                n_pts = write_aligned_pointclouds(Path(dense.dense_ply), M, project / "reconstruction" / "dense_aligned.ply",
+                                                  project / "previews" / "pointcloud.ply")
+                sub.log(f"Nuage de points aligné : {n_pts:,} points pour l'aperçu".replace(",", " "))
+                preview_info = {"decimated": False, "faces": model.num_faces, "full_faces": model.num_faces,
+                                "pointcloud_points": n_pts}
+                if model.num_faces > PREVIEW_MAX_FACES:
+                    export_glb(model, project / "previews", f"{model_name}_full")
+                    try:
+                        sub.log(f"Aperçu allégé : décimation à {PREVIEW_TARGET_FACES:,} faces puis re-texturage".replace(",", " "))
+                        pply = decimate_mesh(mesh, PREVIEW_TARGET_FACES, self.tools, sub, self.cancel, self.threads)  # type: ignore[arg-type]
+                        ptex = run_texture(work, profile, self.tools, sub, mesh, self.cancel, self.threads,  # type: ignore[arg-type]
+                                           mesh_override=pply, output_name="preview", allow_raw_fallback=False)
+                        pmodel = load_model(Path(ptex.obj_path))
+                        remove_small_components(pmodel)
+                        if pmodel.num_faces > PREVIEW_MAX_FACES:
+                            raise RuntimeError(f"aperçu non allégé ({pmodel.num_faces} faces)")
+                        pmodel.apply_transform(M)
+                        export_glb(pmodel, project / "previews", model_name)
+                        preview_info.update(decimated=True, faces=pmodel.num_faces)
+                    except CancelledError:
+                        raise
+                    except Exception as e:  # preview is a convenience: never fail the run for it
+                        sub.log(f"Aperçu allégé impossible ({e}) : l'aperçu utilisera le modèle complet")
+                        export_glb(model, project / "previews", model_name)
+                else:
+                    export_glb(model, project / "previews", model_name)
+                (project / "previews" / "preview.json").write_text(json.dumps(preview_info, indent=2), encoding="utf-8")
             finally:
                 lg.close()
-            # persist the canonical textured model inside the project
-            for old in list((project / "meshes").glob(f"{model_name}*")) + list((project / "textures").glob(f"{model_name}*")):
-                old.unlink()
-            textures = write_obj(model, project / "meshes" / f"{model_name}.obj", texture_dir=project / "textures",
-                                 texture_rel="../textures/")
-            preview = export_glb(model, project / "previews", model_name)
             result.model_obj = str(project / "meshes" / f"{model_name}.obj")
-            result.preview_glb = preview.path
+            result.preview_glb = str(project / "previews" / f"{model_name}.glb")
             result.num_faces = model.num_faces
             result.num_vertices = model.num_vertices
             result.textures = [str(t) for t in textures]
@@ -257,7 +365,7 @@ class ReconstructionPipeline:
                 lg = self._logger(current, project)
                 try:
                     exports = run_exports(model, project / "exports", model_name, tuple(export_formats), lg, self.cancel,
-                                          point_cloud=project / "reconstruction" / "dense.ply", unit_scale=model.unit_scale)
+                                          point_cloud=project / "reconstruction" / "dense_aligned.ply", unit_scale=model.unit_scale)
                 finally:
                     lg.close()
                 result.exports = [asdict(e) for e in exports]

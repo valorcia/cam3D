@@ -214,10 +214,39 @@ def run_refine(work_dir: Path, profile: QualityProfile, tools: ToolRegistry, log
     return MeshResult(mesh.scene_mvs, str(ply), v, f)
 
 
+def _texture_outputs(mvs_dir: Path, name: str) -> list[Path]:
+    """Files written by TextureMesh for output ``name`` — and nothing else
+    (``name*`` would also match e.g. the input mesh ``name_mesh.ply``)."""
+    out = [mvs_dir / f"{name}{ext}" for ext in (".glb", ".gltf", ".obj", ".mtl", ".ply")]
+    out += [p for p in mvs_dir.glob(f"{name}_*") if p.suffix.lower() in {".jpg", ".jpeg", ".png"}
+            and (p.stem.startswith(f"{name}_material") or p.stem[len(name) + 1:].isdigit() or "map_Kd" in p.stem)]
+    return [p for p in out if p.exists()]
+
+
+def decimate_mesh(mesh: MeshResult, target_faces: int, tools: ToolRegistry, logger: StageLogger,
+                  cancel: CancelToken | None = None, threads: int = 0, out_name: str = "decimated_preview") -> Path:
+    """Quadric decimation of an existing mesh with OpenMVS (before texturing,
+    so the decimated mesh gets its own clean UV atlas)."""
+    threads = threads or (os.cpu_count() or 2)
+    mvs_dir = Path(mesh.scene_mvs).parent
+    out = mvs_dir / f"{out_name}.mvs"
+    cmd = [
+        tools.openmvs_bin("ReconstructMesh"), mesh.scene_mvs, "-w", str(mvs_dir), "--mesh-file", mesh.mesh_ply,
+        "-o", str(out), "--target-face-num", str(target_faces),
+        "--remove-spurious", "0", "--remove-spikes", "0", "--close-holes", "0", "--smooth", "0",
+        *_common_args(threads),
+    ]
+    run_tool(cmd, cwd=mvs_dir, on_line=_stream(logger), cancel=cancel)
+    ply = mvs_dir / f"{out_name}.ply"
+    if not ply.exists():
+        raise RuntimeError("La décimation n'a produit aucun maillage")
+    return ply
+
+
 def run_texture(work_dir: Path, profile: QualityProfile, tools: ToolRegistry, logger: StageLogger,
                 mesh: MeshResult, cancel: CancelToken | None = None, threads: int = 0,
                 mesh_override: Path | None = None, output_name: str = "textured",
-                export_type: str = "glb") -> TextureResult:
+                export_type: str = "glb", allow_raw_fallback: bool = True) -> TextureResult:
     """Texture ``mesh`` (or ``mesh_override`` PLY, e.g. a cleaned/decimated one).
 
     The default output is GLB: OpenMVS 2.3.0's OBJ writer crashes on
@@ -235,14 +264,16 @@ def run_texture(work_dir: Path, profile: QualityProfile, tools: ToolRegistry, lo
     mvs_dir = Path(mesh.scene_mvs).parent
     ext = ".glb" if export_type == "glb" else ".obj"
     out = mvs_dir / f"{output_name}{ext}"
-    for old in mvs_dir.glob(f"{output_name}*"):
+    for old in _texture_outputs(mvs_dir, output_name):
         old.unlink()
     logger.start(f"Texturage (TextureMesh, niveau {profile.texture_resolution_level}, atlas max {profile.texture_max_size}px)")
 
     mesh_file = Path(mesh_override) if mesh_override is not None else Path(mesh.mesh_ply)
+    if not mesh_file.exists():
+        raise RuntimeError(f"Maillage à texturer introuvable : {mesh_file.name}")
     raw_mesh = mvs_dir / "scene_dense_mesh.ply"
     attempts: list[tuple[Path, int]] = [(mesh_file, 1), (mesh_file, 0)]
-    if raw_mesh.exists() and raw_mesh.resolve() != mesh_file.resolve():
+    if allow_raw_fallback and raw_mesh.exists() and raw_mesh.resolve() != mesh_file.resolve():
         attempts.append((raw_mesh, 0))
     last_err: Exception | None = None
     for i, (mfile, seam) in enumerate(attempts, 1):
@@ -269,7 +300,7 @@ def run_texture(work_dir: Path, profile: QualityProfile, tools: ToolRegistry, lo
     else:
         raise RuntimeError(f"Texturage impossible après {len(attempts)} tentatives : {last_err}")
 
-    textures = sorted(str(p) for p in mvs_dir.glob(f"{output_name}*") if p.suffix.lower() in {".jpg", ".png", ".jpeg"})
+    textures = sorted(str(p) for p in _texture_outputs(mvs_dir, output_name) if p.suffix.lower() in {".jpg", ".png", ".jpeg"})
     if export_type == "obj":
         mtl = out.with_suffix(".mtl")
         if not mtl.exists() or not textures:

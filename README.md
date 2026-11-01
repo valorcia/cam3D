@@ -16,7 +16,7 @@ Téléphone ──photos──▶ Ordinateur (API locale) ──▶ COLMAP (cam�
 | 1 | Audit technique, choix d'architecture | ✅ terminé (voir `ARCHITECTURE.md`) |
 | 2 | **Moteur de reconstruction réel** : photos → OBJ texturé → DAE | ✅ fonctionnel, testé sur un jeu de photos réel |
 | 3 | API locale FastAPI, projets, tâches, appairage | ✅ fonctionnel, testé (voir `API.md`) |
-| 4 | Interface Web (Next.js, visualiseur Three.js) | ⏳ |
+| 4 | Interface Web (Next.js, visualiseur Three.js) | ✅ fonctionnelle, testée de bout en bout (Playwright) |
 | 5 | Capture mobile (PWA, QR code, HTTPS local) | ⏳ |
 | 6 | Profils qualité avancés, nettoyage interactif, étalonnage, mesures | ⏳ (profils déjà en place) |
 | 7 | Validation complète téléphone → SketchUp | ⏳ |
@@ -34,7 +34,8 @@ sudo ./scripts/build_openmvs_linux.sh     # Linux : compile OpenMVS (macOS : bre
 source .venv/bin/activate
 cam3d doctor                              # matériel + outils détectés
 cam3d reconstruct /chemin/photos /chemin/projet --profile fast --export obj,dae,glb
-cam3d serve --host 0.0.0.0              # API locale : http://127.0.0.1:8765/docs
+(cd frontend && npm ci && npm run build)  # interface Web
+cam3d serve --host 0.0.0.0              # interface : http://127.0.0.1:8765  ·  API : /docs
 ```
 
 Le projet produit `meshes/model.obj`, `textures/`, `previews/model.glb` et les

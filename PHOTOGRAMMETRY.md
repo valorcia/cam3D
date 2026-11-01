@@ -10,7 +10,7 @@
 | 4 | Maillage | OpenMVS `ReconstructMesh` + filtrage maison | `scene_dense_mesh.ply` → `scene_dense_mesh_filtered.ply` | activité |
 | 5 | Raffinement (ULTRA) | OpenMVS `RefineMesh` | maillage raffiné photométriquement | activité |
 | 6 | Texturage | OpenMVS `TextureMesh` | `textured.glb` (glTF binaire, atlas intégré) ; 3 tentatives : seam-leveling global → sans seam-leveling → maillage brut | activité |
-| 7 | Nettoyage | trimesh | composants isolés, faces dégénérées, repère canonique | activité |
+| 7 | Nettoyage et aperçus | trimesh / Open3D / OpenMVS | composants isolés, faces dégénérées, repère canonique (verticale, murs alignés, face vers +Z), aperçu ≤ 250 k faces re-texturé, nuage aligné | activité |
 | 8 | Export | trimesh / pycollada | OBJ, GLB, STL, PLY, DAE | mesurée (format i/N) |
 
 Images excluses automatiquement : netteté < 25 (variance du laplacien sur une

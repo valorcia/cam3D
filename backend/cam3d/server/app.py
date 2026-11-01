@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -159,6 +160,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         p["exports"] = projects.list_exports(pid)
         p["active_job"] = jobs.active_job(pid)
         p["estimates"] = {name: jobs.estimate(name, p["photo_count"]) for name in PROFILES}
+        pj = projects.path(pid) / "previews" / "preview.json"
+        try:
+            p["preview"] = json.loads(pj.read_text(encoding="utf-8")) if pj.exists() else None
+        except ValueError:
+            p["preview"] = None
         return p
 
     @app.patch("/api/projects/{pid}")
@@ -194,18 +200,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"ok": True}
 
     @app.get("/api/projects/{pid}/preview.glb")
-    def preview(pid: str, _: Principal = Depends(principal)):
-        f = projects.path(pid) / "previews" / "model.glb"
+    def preview(pid: str, full: bool = False, _: Principal = Depends(principal)):
+        d = projects.path(pid) / "previews"
+        f = d / "model_full.glb" if full and (d / "model_full.glb").exists() else d / "model.glb"
         if not f.exists():
             raise HTTPException(404, "Aucun modèle reconstruit")
         return FileResponse(f, media_type="model/gltf-binary", headers={"Cache-Control": "no-cache"})
 
     @app.get("/api/projects/{pid}/pointcloud.ply")
-    def pointcloud(pid: str, kind: str = Query("sparse", pattern="^(sparse|dense)$"), _: Principal = Depends(principal)):
-        f = projects.path(pid) / "reconstruction" / f"{kind}.ply"
+    def pointcloud(pid: str, _: Principal = Depends(principal)):
+        f = projects.path(pid) / "previews" / "pointcloud.ply"
         if not f.exists():
             raise HTTPException(404, "Nuage de points indisponible")
-        return FileResponse(f, media_type="application/octet-stream")
+        return FileResponse(f, media_type="application/octet-stream", headers={"Cache-Control": "no-cache"})
 
     # ------------------------------------------------------------------ photos
     @app.get("/api/projects/{pid}/photos")
