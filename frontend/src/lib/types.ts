@@ -31,7 +31,8 @@ export interface Estimate {
 export interface Job {
   id: string;
   project_id: string;
-  kind: "reconstruct" | "export";
+  kind: "reconstruct" | "export" | "video";
+  params?: Record<string, string>;
   profile: string | null;
   formats: string[];
   resume: boolean;
@@ -116,4 +117,4 @@ export interface SystemInfo {
   stages: { id: StageId; label: string }[];
 }
 
-export interface Whoami { role: "desktop" | "device"; name: string }
+export interface Whoami { role: "desktop" | "device" | "anonymous"; name: string }

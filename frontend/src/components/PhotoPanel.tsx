@@ -1,10 +1,12 @@
 "use client";
+import Link from "next/link";
 import { useRef, useState } from "react";
-import { api, uploadPhotos, url } from "@/lib/api";
+import { api, uploadPhotos, uploadVideo, url } from "@/lib/api";
+import { useApp } from "@/lib/store";
 import { formatBytes } from "@/lib/format";
 import type { ProjectDetail } from "@/lib/types";
-import { IconAlert, IconImages, IconTrash, IconUpload } from "./Icons";
-import { ErrorBox } from "./ui";
+import { IconAlert, IconImages, IconPhone, IconTrash, IconUpload } from "./Icons";
+import { ErrorBox, Modal, Spinner } from "./ui";
 
 const TIPS = [
   "Tournez lentement autour de l’objet, en gardant toujours une partie commune entre deux photos (60 à 80 %).",
@@ -21,6 +23,25 @@ export function PhotoPanel({ project, locked, onChange }: { project: ProjectDeta
   const [report, setReport] = useState<{ added: number; rejected: { file: string; error: string }[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
+  const { whoami, system } = useApp();
+  const videoInput = useRef<HTMLInputElement>(null);
+  const [videoProgress, setVideoProgress] = useState<number | null>(null);
+  const [qr, setQr] = useState<{ urls: string[]; code: string } | null>(null);
+  const videoJob = project.active_job?.kind === "video" ? project.active_job : null;
+  const liveVideo = useApp((st) => (videoJob ? st.jobEvents[videoJob.id] : undefined));
+  const lastVideoEvent = liveVideo?.[liveVideo.length - 1];
+
+  async function importVideo(file: File | undefined) {
+    if (!file) return;
+    setError(null); setVideoProgress(0);
+    try { await uploadVideo(project.id, file, setVideoProgress); onChange(); } catch (e: any) { setError(e.message); }
+    setVideoProgress(null);
+  }
+
+  async function phoneCapture() {
+    try { const s = await api.pairSession(`/capture/?id=${project.id}`); setQr({ urls: s.urls, code: s.code }); }
+    catch (e: any) { setError(e.message); }
+  }
 
   async function upload(files: File[]) {
     if (!files.length || locked) return;
@@ -52,9 +73,30 @@ export function PhotoPanel({ project, locked, onChange }: { project: ProjectDeta
           <p className="text-sm text-muted">Glissez vos photos ici ou</p>
           <input ref={input} type="file" accept="image/*,.heic,.heif" multiple hidden data-testid="photo-input"
             onChange={(e) => { upload(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
-          <button className="btn-primary" disabled={locked || progress !== null} onClick={() => input.current?.click()}>
-            <IconImages className="h-4 w-4" /> Choisir des photos
-          </button>
+          <div className="flex flex-wrap justify-center gap-2">
+            <button className="btn-primary" disabled={locked || progress !== null} onClick={() => input.current?.click()}>
+              <IconImages className="h-4 w-4" /> Choisir des photos
+            </button>
+            {system?.video_import_available && (
+              <button className="btn-ghost" disabled={locked || !!videoJob || videoProgress !== null} onClick={() => videoInput.current?.click()} data-testid="video-button">
+                Importer une vidéo
+              </button>
+            )}
+            {whoami?.role === "device" ? (
+              <Link className="btn-ghost" href={`/capture/?id=${project.id}`} data-testid="capture-link"><IconPhone className="h-4 w-4" /> Prendre des photos</Link>
+            ) : (
+              <button className="btn-ghost" disabled={locked} onClick={phoneCapture} data-testid="phone-capture"><IconPhone className="h-4 w-4" /> Capturer avec le téléphone</button>
+            )}
+          </div>
+          <input ref={videoInput} type="file" accept="video/*" hidden data-testid="video-input"
+            onChange={(e) => { importVideo(e.target.files?.[0]); e.target.value = ""; }} />
+          {videoProgress !== null && <p className="text-xs text-muted">Envoi de la vidéo {Math.round(videoProgress * 100)} %</p>}
+          {videoJob && (
+            <div className="w-full max-w-sm text-xs text-muted" data-testid="video-job">
+              <p className="flex items-center justify-center gap-2"><Spinner className="h-3 w-3" /> {lastVideoEvent?.message || "Extraction des images de la vidéo…"}</p>
+              {lastVideoEvent?.progress != null && <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10"><div className="h-full bg-accent" style={{ width: `${lastVideoEvent.progress * 100}%` }} /></div>}
+            </div>
+          )}
           {locked && <p className="text-xs text-warn">Traitement en cours : les photos ne peuvent pas être modifiées.</p>}
           {progress !== null && (
             <div className="w-full max-w-sm">
@@ -94,6 +136,17 @@ export function PhotoPanel({ project, locked, onChange }: { project: ProjectDeta
           ))}
         </div>
       </div>
+      <Modal open={!!qr} onClose={() => setQr(null)} title="Capturer avec le téléphone">
+        {qr && (
+          <div className="space-y-3 text-sm">
+            {qr.urls[0] ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={url(`/api/pair/qr.svg?url=${encodeURIComponent(qr.urls[0])}`)} alt="QR code" className="mx-auto w-56 rounded-xl bg-white p-3" />
+            ) : <ErrorBox>Aucune adresse réseau local détectée.</ErrorBox>}
+            <p className="text-muted">Scannez avec l’appareil photo du téléphone (même Wi-Fi). Code : <span className="font-mono tracking-widest text-text">{qr.code}</span>. Validez ensuite la demande dans Paramètres si le téléphone n’est pas encore autorisé.</p>
+          </div>
+        )}
+      </Modal>
       <aside className="card h-fit space-y-3 p-5">
         <h3 className="font-medium">Conseils de prise de vue</h3>
         <ul className="space-y-2 text-sm text-muted">

@@ -18,11 +18,17 @@ function Pair() {
   const params = useSearchParams();
   const router = useRouter();
   const [code, setCode] = useState(params.get("code") ?? "");
+  const nextRaw = params.get("next") ?? "/";
+  const next = nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/";
   const [name, setName] = useState("");
   const [state, setState] = useState<"form" | "waiting" | "rejected" | "done">("form");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { setName(guessDeviceName()); }, []);
+  useEffect(() => {
+    setName(guessDeviceName());
+    // already paired on this origin (cookie) -> go straight to the destination
+    api.whoami().then((w) => { if (w.role !== "anonymous") router.replace(next); }).catch(() => undefined);
+  }, [next, router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setError(null);
@@ -32,7 +38,7 @@ function Pair() {
       const poll = async () => {
         try {
           const s = await api.pairPoll(r.request_id, r.secret);
-          if (s.status === "approved") { setState("done"); setTimeout(() => { window.location.href = "/"; }, 600); return; }
+          if (s.status === "approved") { setState("done"); setTimeout(() => { window.location.href = next; }, 600); return; }
           if (s.status === "rejected") { setState("rejected"); return; }
           setTimeout(poll, 1500);
         } catch (err: any) { setError(err.message); setState("form"); }

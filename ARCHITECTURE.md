@@ -119,6 +119,8 @@ terminée avec le même profil n'est pas recalculée.
 | Nettoyage | trimesh/Open3D en Python, par sous-ensembles de faces | conserve UV et textures sans ré-échantillonnage. |
 | Filtrage géométrique | avant texturage, sur le PLY brut | les surfaces « ciel » d'OpenMVS sont supprimées avant de gaspiller l'atlas de textures. |
 | Exécution des traitements | un **processus séparé** par tâche, groupe de processus dédié | un plantage natif (OpenMVS, COLMAP) ou un arrêt forcé n'affecte pas le serveur ; l'annulation tue aussi les sous-processus OpenMVS. |
+| Caméra sur téléphone | HTTPS local par **autorité locale contrainte** aux adresses privées + repli `<input capture>` | les navigateurs mobiles exigent un contexte sécurisé ; aucune protection n'est contournée, l'utilisateur choisit d'installer le certificat ; sans lui, l'appareil photo natif fonctionne en HTTP. |
+| Vidéo | extraction FFmpeg + sélection (netteté relative, similarité, exposition) | une vidéo n'est pas supposée meilleure que des photos : seules les images nettes et distinctes sont gardées. |
 | Sécurité réseau local | appairage par code + approbation explicite sur l'ordinateur, jeton porteur | pas de compte ni de cloud ; une adresse IP du réseau local ne suffit jamais pour accéder aux projets. |
 | Simplification avec textures | **après** maillage, **avant** texturage (`--target-face-num` d'OpenMVS) | décimer un maillage déjà texturé dégrade les UV. Les niveaux de simplification de « Export SketchUp » (phase 6) re-texturent un maillage décimé. |
 

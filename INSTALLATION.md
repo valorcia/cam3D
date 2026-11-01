@@ -73,3 +73,35 @@ Point d'attention : la caméra d'un iPhone exige HTTPS (phase 5).
 `cam3d doctor` affiche OS, CPU, RAM, disque, GPU, et l'état de chaque outil ;
 `cam3d doctor --json` fournit la même chose au serveur et à l'installateur.
 Le diagnostic ne télécharge rien.
+
+## Téléphone (même réseau Wi-Fi)
+
+`cam3d serve --host 0.0.0.0` (ou `./scripts/start.sh`) sert :
+
+- `http://<ip>:8765` : interface et API ;
+- `https://<ip>:8443` : la même chose en HTTPS, nécessaire pour utiliser la
+  **caméra dans le navigateur** (iOS et Android l'exigent).
+
+Le certificat HTTPS est émis par une **autorité locale** créée au premier
+démarrage dans `<CAM3D_DATA_DIR>/tls/` (clé privée lisible par l'utilisateur
+seul). Elle est limitée par contraintes de noms aux adresses privées et à
+`localhost`/`*.local` : installée sur un téléphone, elle ne permet pas
+d'intercepter d'autres connexions. Son empreinte SHA-256 est affichée au
+démarrage, dans Paramètres et sur la page d'installation du téléphone.
+
+Parcours : Paramètres › Connecter un téléphone (ou « Capturer avec le
+téléphone » dans un projet) → scanner le QR code → page d'installation :
+
+| Choix | Ce qu'il faut faire | Capture possible |
+|---|---|---|
+| Connexion sécurisée (recommandé) | installer le certificat une fois (iOS : profil puis « Réglages des certificats » › activer ; Android : Paramètres › Sécurité › Installer un certificat CA) | caméra dans la page, envoi automatique photo par photo |
+| Sans certificat | rien | appareil photo natif du téléphone (pleine résolution, une photo à la fois), galerie, vidéo |
+
+Dans les deux cas l'ordinateur doit **approuver** l'appareil (code à 6 chiffres
++ bouton « Autoriser »). `cam3d serve --no-https` désactive le HTTPS local.
+
+> Non vérifié sur de vrais téléphones dans cet environnement : le parcours a été
+> testé avec Chromium en émulation Pixel 7, caméra simulée et autorité
+> installée dans son magasin de confiance (voir TESTING.md). Les étapes iOS
+> (profil + confiance totale) sont celles documentées par Apple et restent à
+> valider sur un iPhone réel en phase 7.

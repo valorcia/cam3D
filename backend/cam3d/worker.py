@@ -36,11 +36,12 @@ def _event_to_dict(ev) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="cam3d.worker")
-    p.add_argument("kind", choices=["reconstruct", "export"])
+    p.add_argument("kind", choices=["reconstruct", "export", "video"])
     p.add_argument("project")
     p.add_argument("--profile", default="fast")
     p.add_argument("--formats", default="obj,glb,dae")
     p.add_argument("--resume", action="store_true")
+    p.add_argument("--video", default=None, help="video file name inside originals/videos/")
     a = p.parse_args(argv)
 
     from .engine.events import CancelToken
@@ -67,6 +68,32 @@ def main(argv: list[str] | None = None) -> int:
         res = pipe.run(project / "originals", project, profile=a.profile, export_formats=formats, resume=a.resume)
         emit({"type": "result", "result": res.to_dict()})
         return 0 if res.success else 3
+
+    if a.kind == "video":
+        from .engine.events import Stage, StageLogger
+        from .engine.stages.video import extract_frames
+        from .engine.tools import discover_tools
+
+        tools = discover_tools()
+        if not (tools.ffmpeg and tools.ffmpeg.available):
+            emit({"type": "result", "result": {"success": False, "error": "FFmpeg n'est pas installé : import vidéo impossible", "error_stage": "prepare"}})
+            return 3
+        import shutil as _sh
+        ffprobe = str(Path(tools.ffmpeg.path).with_name("ffprobe" + Path(tools.ffmpeg.path).suffix))
+        if not Path(ffprobe).exists():
+            ffprobe = _sh.which("ffprobe") or "ffprobe"
+        lg = StageLogger(Stage.PREPARE, project / "logs", lambda ev: emit(_event_to_dict(ev)))
+        try:
+            sel = extract_frames(project / "originals" / "videos" / Path(a.video).name, project / "processed" / "video",
+                                 tools.ffmpeg.path, ffprobe, lg, cancel)
+            emit({"type": "result", "result": {"success": True, "frames": sel.frames, "selection": asdict(sel)}})
+            return 0
+        except Exception as e:  # noqa: BLE001
+            lg.fail(str(e))
+            emit({"type": "result", "result": {"success": False, "error": str(e), "error_stage": "prepare"}})
+            return 3
+        finally:
+            lg.close()
 
     # export only
     from .engine.events import Stage, StageLogger

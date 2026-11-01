@@ -24,6 +24,7 @@ dependencies = [
     "pydantic>=2",
     "websockets>=12",
     "qrcode>=7.4",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

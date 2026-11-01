@@ -75,7 +75,10 @@ export const api = {
   putThumbnail: (id: string, blob: Blob) =>
     request<{ ok: boolean }>(`/api/projects/${id}/thumbnail.jpg`, { method: "PUT", body: blob }),
 
-  pairSession: () => request<{ id: string; code: string; expires_at: number; urls: string[]; secure: boolean }>("/api/pair/sessions", json("POST")),
+  pairSession: (next = "") =>
+    request<{ id: string; code: string; expires_at: number; urls: string[]; https_urls: string[]; secure: boolean }>(
+      `/api/pair/sessions${next ? `?next=${encodeURIComponent(next)}` : ""}`, json("POST")),
+  tls: () => request<{ enabled: boolean; https_port: number | null; http_port: number | null; ca: { fingerprint_sha256: string; not_after: string } | null }>("/api/tls"),
   pairPending: () => request<{ id: string; device_name: string; created_at: number }[]>("/api/pair/pending"),
   pairApprove: (rid: string) => request(`/api/pair/requests/${rid}/approve`, json("POST")),
   pairReject: (rid: string) => request(`/api/pair/requests/${rid}/reject`, json("POST")),
@@ -86,6 +89,26 @@ export const api = {
   devices: () => request<{ id: string; name: string; created_at: number; expires_at: number; last_seen: number | null }[]>("/api/devices"),
   revokeDevice: (id: string) => request(`/api/devices/${id}`, { method: "DELETE" }),
 };
+
+/** Upload a video; the server extracts frames in a background job (returned). */
+export function uploadVideo(projectId: string, file: File, onProgress?: (f: number) => void): Promise<Job> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url(`/api/projects/${projectId}/video`));
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
+    xhr.onerror = () => reject(new ApiError(0, "Transfert interrompu : vérifiez la connexion au réseau local."));
+    xhr.onload = () => {
+      let body: any = null;
+      try { body = JSON.parse(xhr.responseText); } catch { /* ignore */ }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body);
+      else reject(new ApiError(xhr.status, body?.detail ?? `Erreur ${xhr.status}`));
+    };
+    xhr.send(form);
+  });
+}
 
 /** Upload with real byte-level progress (fetch has no upload progress). */
 export function uploadPhotos(

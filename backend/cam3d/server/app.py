@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+from urllib.parse import quote
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,7 @@ from .jobs import JobManager
 from .network import lan_addresses
 from .projects import ProjectError, ProjectStore
 from .security import PairingError, PairingManager
+from .tls import TlsPaths, ca_info
 
 LOG_STAGES = [s.value for s in Stage] + ["pipeline", "worker"]
 TOKEN_COOKIE = "cam3d_token"
@@ -254,6 +256,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         projects.delete_photo(pid, name)
         return {"deleted": name}
 
+    VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp"}
+
+    @app.post("/api/projects/{pid}/video", status_code=202)
+    async def upload_video(pid: str, file: UploadFile = File(...), _: Principal = Depends(principal)):
+        p = projects.get(pid)
+        if p["status"] in ("queued", "processing") or jobs.active_job(pid):
+            raise HTTPException(409, "Un traitement est déjà en cours pour ce projet")
+        if not system(_)["video_import_available"]:
+            raise HTTPException(503, "FFmpeg n'est pas installé : import vidéo indisponible")
+        from .projects import safe_filename
+
+        ext = Path(file.filename or "").suffix.lower()
+        if ext not in VIDEO_EXT:
+            raise HTTPException(415, f"Format vidéo non pris en charge : {ext or 'inconnu'} (MP4, MOV, WebM…)")
+        name = safe_filename(file.filename or f"video{ext}")
+        dest_dir = projects.path(pid) / "originals" / "videos"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        stem, i, dest = Path(name).stem, 1, dest_dir / name
+        while dest.exists():
+            dest = dest_dir / f"{stem}_{i}{ext}"
+            i += 1
+        limit = settings.max_video_mb * 1024 * 1024
+        size = 0
+        try:
+            with open(dest, "wb") as out:
+                while chunk := await file.read(4 * 1024 * 1024):
+                    size += len(chunk)
+                    if size > limit:
+                        raise HTTPException(413, f"Vidéo trop volumineuse (maximum {settings.max_video_mb} Mo)")
+                    out.write(chunk)
+        except HTTPException:
+            dest.unlink(missing_ok=True)
+            raise
+        finally:
+            await file.close()
+        if size == 0:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(400, "Fichier vide")
+        return jobs.submit(pid, "video", "fast", [], params={"video": dest.name})
+
     # ------------------------------------------------------------------ jobs
     @app.post("/api/projects/{pid}/reconstruct", status_code=202)
     def reconstruct(pid: str, body: ReconstructRequest, _: Principal = Depends(principal)):
@@ -317,14 +359,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         nice = "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip() or "cam3d"
         return FileResponse(f, filename=f"{nice}_{f.name}")
 
+    # ------------------------------------------------------------------ TLS (phone camera)
+    def _tls_state() -> dict:
+        st = getattr(app.state, "tls", None) or {}
+        return {"enabled": bool(st.get("enabled")), "https_port": st.get("https_port"),
+                "http_port": st.get("http_port"), "ca": ca_info(TlsPaths(settings.tls_dir)) if st.get("enabled") else None}
+
+    @app.get("/api/tls")
+    def tls_info():
+        return _tls_state()  # public, non-sensitive: the phone needs it before pairing
+
+    @app.get("/api/tls/ca.crt")
+    def tls_ca():
+        f = TlsPaths(settings.tls_dir).ca_crt
+        if not f.exists():
+            raise HTTPException(404, "HTTPS local non activé")
+        return FileResponse(f, media_type="application/x-x509-ca-cert", filename="cam3d-ca.crt")
+
     # ------------------------------------------------------------------ pairing
     @app.post("/api/pair/sessions", status_code=201)
-    def pair_session(request: Request, _: Principal = Depends(desktop_only)):
+    def pair_session(request: Request, next: str = "", _: Principal = Depends(desktop_only)):
         s = pairing.create_session()
-        port = request.url.port or (443 if request.url.scheme == "https" else 80)
-        urls = [f"{request.url.scheme}://{ip}:{port}/pair?code={s.code}" for ip in lan_addresses()]
-        return {"id": s.id, "code": s.code, "expires_at": s.expires_at, "urls": urls,
-                "secure": request.url.scheme == "https"}
+        tls = _tls_state()
+        http_port = tls["http_port"] or request.url.port or 80
+        nxt = f"&next={quote(next, safe='')}" if next.startswith("/") else ""
+        ips = lan_addresses()
+        # The QR opens the setup page over HTTP (works before any certificate is installed);
+        # it then offers HTTPS (camera in the browser) or plain HTTP (gallery / native camera).
+        urls = [f"http://{ip}:{http_port}/setup/?code={s.code}{nxt}" for ip in ips]
+        https_urls = [f"https://{ip}:{tls['https_port']}/pair/?code={s.code}{nxt}" for ip in ips] if tls["enabled"] else []
+        return {"id": s.id, "code": s.code, "expires_at": s.expires_at, "urls": urls, "https_urls": https_urls,
+                "secure": tls["enabled"]}
 
     @app.get("/api/pair/qr.svg")
     def pair_qr(url: str, _: Principal = Depends(desktop_only)):
@@ -378,8 +443,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"revoked": did}
 
     @app.get("/api/whoami")
-    def whoami(p: Principal = Depends(principal)):
-        return {"role": p.role, "name": p.name}
+    def whoami(request: Request):
+        # Auth probe used by the UI before pairing: answers 200 with role "anonymous"
+        # rather than 401 (every other route still requires authorisation).
+        p = _principal_from(request.client.host if request.client else "", request.headers, request.query_params, request.cookies)
+        return {"role": p.role, "name": p.name} if p else {"role": "anonymous", "name": ""}
 
     # ------------------------------------------------------------------ events
     @app.websocket("/api/events")

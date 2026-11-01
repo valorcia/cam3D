@@ -5,7 +5,7 @@ import { ErrorBox, Spinner } from "@/components/ui";
 import { api, url } from "@/lib/api";
 import { useApp } from "@/lib/store";
 
-type Session = { id: string; code: string; expires_at: number; urls: string[]; secure: boolean };
+type Session = { id: string; code: string; expires_at: number; urls: string[]; https_urls: string[]; secure: boolean };
 
 export default function Settings() {
   const { system, whoami } = useApp();
@@ -14,6 +14,8 @@ export default function Settings() {
   const [devices, setDevices] = useState<{ id: string; name: string; last_seen: number | null; expires_at: number }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [left, setLeft] = useState(0);
+  const [tls, setTls] = useState<Awaited<ReturnType<typeof api.tls>> | null>(null);
+  useEffect(() => { api.tls().then(setTls).catch(() => undefined); }, []);
 
   const loadDevices = () => api.devices().then(setDevices).catch(() => undefined);
   useEffect(() => { if (whoami?.role === "desktop") loadDevices(); }, [whoami]);
@@ -71,7 +73,9 @@ export default function Settings() {
               <p>Scannez le QR code avec l’appareil photo du téléphone, ou ouvrez :</p>
               {session.urls.map((u) => <code key={u} className="block break-all rounded-lg bg-black/40 px-3 py-2 text-xs">{u}</code>)}
               <p>Code : <span className="font-mono text-2xl tracking-[0.3em]" data-testid="pair-code">{session.code}</span> <span className="text-xs text-faint">(expire dans {Math.floor(left / 60)} min {String(left % 60).padStart(2, "0")})</span></p>
-              {!session.secure && <p className="text-xs text-warn">Connexion HTTP : l’envoi de photos depuis la galerie fonctionne ; l’appareil photo intégré dans le navigateur nécessitera le mode HTTPS (prochaine version).</p>}
+              {session.secure
+                ? <p className="text-xs text-muted">Le téléphone proposera d’installer le certificat local pour utiliser la caméra dans le navigateur (une seule fois), ou de continuer sans : appareil photo natif et galerie.</p>
+                : <p className="text-xs text-warn">HTTPS local inactif (serveur lancé sans réseau local ou avec --no-https) : le téléphone utilisera l’appareil photo natif et la galerie.</p>}
               {pending.length === 0 ? <p className="flex items-center gap-2 text-muted"><Spinner className="h-3 w-3" /> En attente d’une demande…</p> : pending.map((r) => (
                 <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent/40 bg-accent/5 p-3" data-testid="pair-request">
                   <span><b>{r.device_name}</b> demande l’accès à vos projets.</span>
@@ -117,6 +121,8 @@ export default function Settings() {
             {row("FFmpeg (vidéo)", t.ffmpeg?.available ? "installé" : "absent", !!t.ffmpeg?.available)}
             {row("Blender (optionnel)", t.blender?.available ? t.blender.version ?? "installé" : "absent")}
             {row("Reconstruction possible", system?.reconstruction_available ? "oui" : "non", !!system?.reconstruction_available)}
+            {row("HTTPS local (caméra du téléphone)", tls?.enabled ? `actif, port ${tls.https_port}` : "inactif", !!tls?.enabled)}
+            {tls?.ca && row("Empreinte du certificat local", <code className="break-all text-[10px]">{tls.ca.fingerprint_sha256}</code>)}
             {row("Dossier des projets", <code className="text-xs">{system?.data_dir}</code>)}
             {row("Version", system?.version)}
           </>}

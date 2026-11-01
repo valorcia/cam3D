@@ -99,6 +99,41 @@ Le DAE téléchargé par l'interface a ensuite été importé dans Blender 4.5 :
 Z 0→6,21 : modèle posé au sol, façade parallèle à l'axe X, tournée vers −Y
 (vue « Face » de SketchUp).
 
+## Capture mobile (`frontend/tests/e2e_capture.mjs`)
+
+Chromium en émulation **Pixel 7**, caméra simulée alimentée par une vidéo des
+photos du château (`--use-file-for-fake-video-capture`), autorité locale ajoutée
+au magasin de confiance NSS du navigateur (simule un téléphone qui a installé
+le certificat). Les erreurs HTTPS ne sont **pas** ignorées. Résultat du
+1er novembre 2026 : **9/9 scénarios réussis**.
+
+| Scénario | Résultat |
+|---|---|
+| QR → page d'installation en HTTP, certificat téléchargeable, lien HTTPS | OK |
+| Bascule en HTTPS de confiance (`isSecureContext` vrai) | OK |
+| Appairage approuvé sur l'ordinateur, redirection vers la capture | OK |
+| 16 photos prises dans le navigateur, envoyées automatiquement une à une | 16/16 en 25 s |
+| Suppression d'une photo depuis la bande de capture (aussi sur l'ordinateur) | OK |
+| Reconstruction des 15 photos prises dans le navigateur | **15/15 caméras**, 0,29 px, 149 423 faces, 120 s |
+| Repli HTTP sans certificat : champ `capture="environment"` (appareil photo natif), galerie | OK |
+| Import vidéo depuis l'interface de l'ordinateur | 11 images extraites |
+| Aucune erreur console sur le téléphone | OK |
+
+Tests Python associés : import vidéo réel avec FFmpeg (4 vues distinctes, une
+image floue et des passages immobiles → exactement 4 images nettes retenues),
+chaîne TLS vérifiée par OpenSSL, sonde `whoami` anonyme.
+
+Ce qui n'a **pas** pu être testé ici : un iPhone et un téléphone Android réels
+(installation du certificat, résolution réelle de `takePhoto()` / du flux vidéo,
+Safari iOS). La résolution des photos prises dans le navigateur dépend de
+l'appareil : Chrome Android utilise `ImageCapture.takePhoto()` (capteur complet) ;
+Safari iOS ne l'implémente pas et capture le flux vidéo (souvent 1920×1080 à
+4K). L'appareil photo natif (repli) donne toujours la pleine résolution.
+
+Les tests ont révélé et fait corriger : une tâche vidéo publiée « réussie »
+avant l'import de ses images, une image floue conservée au détriment de la
+version nette de la même vue, et des erreurs 401 parasites avant appairage.
+
 ## Test d'intégration (photos réelles)
 
 `CAM3D_TEST_DATASET=<dossier> pytest -q -m slow` exécute le pipeline complet

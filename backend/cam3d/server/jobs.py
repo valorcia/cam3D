@@ -78,6 +78,7 @@ class JobManager:
         if not j:
             raise ProjectError("Tâche introuvable", 404)
         j["formats"] = json.loads(j["formats"]) if j.get("formats") else []
+        j["params"] = json.loads(j["params"]) if j.get("params") else {}
         j["stages"] = json.loads(j["stages"]) if j.get("stages") else {}
         j["resume"] = bool(j["resume"])
         j["queue_position"] = (list(self._queue).index(job_id) + 1) if job_id in self._queue else None
@@ -132,9 +133,10 @@ class JobManager:
 
     # ------------------------------------------------------------ commands
     def submit(self, project_id: str, kind: str = "reconstruct", profile: str = "fast",
-               formats: list[str] | tuple[str, ...] = ("obj", "glb", "dae"), resume: bool = False) -> dict:
+               formats: list[str] | tuple[str, ...] = ("obj", "glb", "dae"), resume: bool = False,
+               params: dict | None = None) -> dict:
         p = self.projects.get(project_id)
-        if kind not in ("reconstruct", "export"):
+        if kind not in ("reconstruct", "export", "video"):
             raise ProjectError("Type de tâche inconnu")
         if profile not in PROFILES:
             raise ProjectError(f"Profil inconnu : {profile}")
@@ -151,10 +153,12 @@ class JobManager:
                 raise ProjectError("Aucun modèle à exporter : lancez d'abord une reconstruction", 409)
             if not formats:
                 raise ProjectError("Aucun format demandé")
+        if kind == "video" and not (params or {}).get("video"):
+            raise ProjectError("Aucune vidéo indiquée")
         jid = uuid.uuid4().hex[:12]
         self.db.insert("jobs", {"id": jid, "project_id": project_id, "kind": kind, "profile": profile,
                                 "formats": formats, "resume": 1 if resume else 0, "status": "queued",
-                                "created_at": now(), "num_images": p["photo_count"]})
+                                "created_at": now(), "num_images": p["photo_count"], "params": params or {}})
         if kind == "reconstruct":
             self.projects.set_status(project_id, "queued", last_job_id=jid, profile=profile)
         with self._cv:
@@ -224,6 +228,23 @@ class JobManager:
             except RuntimeError:  # loop closed
                 self.unsubscribe(q)
 
+    def _import_frames(self, project_id: str, frames: list[str]) -> int:
+        """Register frames selected by the worker as project photos (same validation as uploads)."""
+        added = 0
+        for f in frames:
+            fp = Path(f)
+            if not fp.exists():
+                continue
+            try:
+                with open(fp, "rb") as fh:
+                    self.projects.add_photo(project_id, fp.name, fh)
+                added += 1
+            except ProjectError:
+                pass
+            finally:
+                fp.unlink(missing_ok=True)
+        return added
+
     # ------------------------------------------------------------ worker
     @staticmethod
     def _kill_tree(proc: subprocess.Popen) -> None:
@@ -264,6 +285,8 @@ class JobManager:
         cmd += [j["kind"], str(proj), "--profile", j["profile"] or "fast", "--formats", ",".join(j["formats"])]
         if j["resume"]:
             cmd.append("--resume")
+        if j["kind"] == "video":
+            cmd += ["--video", j["params"]["video"]]
         started = now()
         self.db.update("jobs", {"id": jid}, {"status": "running", "started_at": started})
         if j["kind"] == "reconstruct":
@@ -325,6 +348,12 @@ class JobManager:
                 f"Le processus de traitement s'est arrêté de façon inattendue (code {proc.returncode}). "
                 f"Consultez logs/worker.log.")
             values.update(status="failed", error=err, error_stage=(result or {}).get("error_stage"))
+        if j["kind"] == "video" and values["status"] == "succeeded":
+            # import BEFORE publishing "succeeded": clients must see every frame once the job is done
+            added = self._import_frames(pid, (result or {}).get("frames") or [])
+            values["stages"] = {**(values.get("stages") or {}), "video": {"status": "finished", "frames_added": added}}
+            if added < 3:
+                values.update(status="failed", error=f"Seulement {added} image(s) valide(s) extraite(s) de la vidéo")
         self.db.update("jobs", {"id": jid}, values)
         if j["kind"] == "reconstruct":
             try:

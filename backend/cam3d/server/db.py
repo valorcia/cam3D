@@ -60,6 +60,10 @@ CREATE INDEX IF NOT EXISTS jobs_project ON jobs(project_id);
 """
 
 
+# (table, column, declaration) added after the first release: applied idempotently.
+MIGRATIONS = [("jobs", "params", "TEXT")]
+
+
 class Database:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
@@ -71,6 +75,10 @@ class Database:
         self._lock = threading.RLock()
         with self._lock:
             self._conn.executescript(SCHEMA)
+            for table, column, decl in MIGRATIONS:
+                cols = {r[1] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+                if column not in cols:
+                    self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
     def execute(self, sql: str, params: tuple | dict = ()) -> sqlite3.Cursor:
         with self._lock:

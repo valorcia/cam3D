@@ -16,7 +16,7 @@
   nuage de points, vues ortho, grille, axes, recentrage), téléchargements.
 - Aperçus allégés (GLB décimé) pour ne pas charger les modèles lourds.
 
-## Phase 5 — Capture mobile
+## Phase 5 — Capture mobile ✅ (livrée, validation sur appareils réels en phase 7)
 - PWA, caméra (`getUserMedia`), compteur, prévisualisation, suppression,
   détection de flou côté client, conseils de déplacement.
 - Vidéo : extraction FFmpeg (netteté, similarité, luminosité).

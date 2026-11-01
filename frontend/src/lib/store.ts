@@ -31,6 +31,7 @@ export const useApp = create<AppState>((set, get) => ({
     if (get().whoami || get().authError) return;
     try {
       const who = await api.whoami();
+      if (who.role === "anonymous") { set({ authError: 401 }); return; }
       set({ whoami: who, authError: null });
       api.system().then((system) => set({ system })).catch(() => undefined);
       connect(set);

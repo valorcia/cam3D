@@ -28,10 +28,15 @@ class Settings:
     worker_python: str = sys.executable
     worker_cmd: list[str] | None = None  # override (tests) — default: [python, -m, cam3d.worker]
     cancel_grace_s: float = 15.0         # graceful cancel delay before killing the worker tree
+    https_port: int = int(os.environ.get("CAM3D_HTTPS_PORT", "8443"))
 
     @property
     def projects_dir(self) -> Path:
         return self.data_dir / "projects"
+
+    @property
+    def tls_dir(self) -> Path:
+        return self.data_dir / "tls"
 
     @property
     def db_path(self) -> Path:

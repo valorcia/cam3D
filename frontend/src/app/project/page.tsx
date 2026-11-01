@@ -49,6 +49,7 @@ function ProjectView() {
   if (error) return <ErrorBox>{error} <Link href="/projects/" className="underline">Retour aux projets</Link></ErrorBox>;
   if (!p) return <div className="flex items-center gap-2 text-sm text-muted"><Spinner /> Chargement…</div>;
   const locked = p.status === "queued" || p.status === "processing";
+  // a video extraction job also refreshes the photo list when it finishes (revision bump)
 
   return (
     <div className="space-y-6">

@@ -129,6 +129,7 @@ def test_photo_upload_validation(desktop, settings):
 # ---------------------------------------------------------------- pairing / auth
 def test_phone_requires_pairing_and_explicit_approval(desktop, phone):
     assert phone.get("/api/projects").status_code == 401
+    assert phone.get("/api/whoami").json() == {"role": "anonymous", "name": ""}
     assert phone.post("/api/pair/sessions").status_code == 401        # only the desktop creates codes
     s = desktop.post("/api/pair/sessions").json()
     assert len(s["code"]) == 6
@@ -336,3 +337,42 @@ def test_log_filter_redacts_tokens():
     rec2 = logging.LogRecord("uvicorn.error", logging.INFO, __file__, 1, '"WebSocket /api/events?token=abc-DEF_1" [accepted]', None, None)
     RedactTokensFilter().filter(rec2)
     assert rec2.getMessage() == '"WebSocket /api/events?token=***" [accepted]'
+
+
+# ---------------------------------------------------------------- video (real worker + real FFmpeg)
+@pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="FFmpeg absent")
+def test_video_import_extracts_distinct_sharp_frames(tmp_path):
+    import subprocess
+
+    # 4 distinct textured "views", each held 1.5 s, plus a blurred copy of view 2: a camera that stops,
+    # moves, and shakes. Expect one frame per distinct view, never the blurred one.
+    imgs = []
+    for i in range(4):
+        p = tmp_path / f"v{i}.jpg"
+        p.write_bytes(jpeg_bytes(100 + i, size=(1280, 960)))
+        imgs.append(p)
+    from PIL import Image, ImageFilter
+    Image.open(imgs[2]).filter(ImageFilter.GaussianBlur(6)).save(tmp_path / "blur.jpg", quality=92)
+    order = [imgs[0], imgs[1], tmp_path / "blur.jpg", imgs[2], imgs[3]]
+    lst = tmp_path / "list.txt"
+    lst.write_text("".join(f"file '{p}'\nduration 1.5\n" for p in order) + f"file '{order[-1]}'\n")
+    video = tmp_path / "walk.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(lst),
+                    "-vf", "fps=30,format=yuv420p", "-c:v", "libx264", "-crf", "18", str(video)], check=True)
+
+    settings = Settings(data_dir=tmp_path / "data", trusted_hosts=frozenset({"127.0.0.1"}))  # real worker
+    app = create_app(settings)
+    with TestClient(app, client=("127.0.0.1", 1)) as c:
+        pid = c.post("/api/projects", json={"name": "Vidéo"}).json()["id"]
+        assert c.post(f"/api/projects/{pid}/video", files={"file": ("doc.txt", b"x", "text/plain")}).status_code == 415
+        with open(video, "rb") as f:
+            r = c.post(f"/api/projects/{pid}/video", files={"file": ("walk.mp4", f, "video/mp4")})
+        assert r.status_code == 202 and r.json()["kind"] == "video"
+        j = wait_job(c, r.json()["id"], timeout=120)
+        assert j["status"] == "succeeded", j
+        assert j["stages"]["video"]["frames_added"] == c.get(f"/api/projects/{pid}").json()["photo_count"]
+        photos = c.get(f"/api/projects/{pid}/photos").json()
+        assert len(photos) == 4, [p["name"] for p in photos]     # one per distinct view, blur rejected
+        assert all(not p["warnings"] for p in photos), [(p["name"], p["warnings"], p["sharpness"], p["brightness"]) for p in photos]
+        assert (settings.projects_dir / pid / "originals" / "videos" / "walk.mp4").exists()  # original kept
+        assert any(e["progress"] is not None for e in j["events"])  # measured progress

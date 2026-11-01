@@ -117,13 +117,60 @@ def cmd_serve(args) -> int:
         return 2
     for name in ("uvicorn.access", "uvicorn.error"):
         logging.getLogger(name).addFilter(RedactTokensFilter())
-    from .server.network import lan_addresses
+    import asyncio
 
-    if args.host in ("0.0.0.0", "::"):
-        for ip in lan_addresses():
-            print(f"cam3D accessible sur le réseau local : http://{ip}:{args.port}  (appairage requis)")
+    from .server.config import Settings
+    from .server.network import lan_addresses
+    from .server.tls import TlsPaths, ensure_server_cert
+
+    settings = Settings()
+    settings.ensure_dirs()
+    app = create_app(settings)
+    ips = lan_addresses() if args.host in ("0.0.0.0", "::") else []
+    https = args.https and bool(ips)
+    if https:
+        try:
+            meta = ensure_server_cert(TlsPaths(settings.tls_dir), ips)
+        except Exception as e:  # never block the app because of TLS
+            print(f"HTTPS local indisponible ({e}) : seul HTTP sera servi.")
+            https = False
+    app.state.tls = {"enabled": https, "https_port": args.https_port if https else None, "http_port": args.port}
     print(f"Interface sur cet ordinateur : http://127.0.0.1:{args.port}")
-    uvicorn.run(create_app(), host=args.host, port=args.port)
+    for ip in ips:
+        print(f"Réseau local : http://{ip}:{args.port}" + (f"  ·  https://{ip}:{args.https_port} (caméra)" if https else "")
+              + "  (appairage requis)")
+    if https:
+        print(f"Empreinte SHA-256 de l'autorité locale : {meta['ca_fingerprint_sha256']}")
+
+    import contextlib
+    import signal
+
+    class _Server(uvicorn.Server):
+        # One process serves HTTP and HTTPS: signals are handled once, below, for both servers.
+        @contextlib.contextmanager
+        def capture_signals(self):  # type: ignore[override]
+            yield
+
+        def install_signal_handlers(self) -> None:  # older uvicorn versions
+            pass
+
+    servers = [_Server(uvicorn.Config(app, host=args.host, port=args.port, lifespan="on"))]
+    if https:
+        p = TlsPaths(settings.tls_dir)
+        servers.append(_Server(uvicorn.Config(app, host=args.host, port=args.https_port, lifespan="off",
+                                              ssl_keyfile=str(p.key), ssl_certfile=str(p.crt))))
+
+    def _stop(*_):
+        for srv in servers:
+            srv.should_exit = True
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, _stop)
+
+    async def _serve() -> None:
+        await asyncio.gather(*(srv.serve() for srv in servers))
+
+    asyncio.run(_serve())
     return 0
 
 
@@ -149,6 +196,9 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("serve", help="démarrer l'API locale")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8765)
+    s.add_argument("--https-port", type=int, default=8443)
+    s.add_argument("--no-https", dest="https", action="store_false",
+                   help="ne pas servir le HTTPS local (caméra du navigateur indisponible sur téléphone)")
     s.set_defaults(func=cmd_serve)
     args = p.parse_args(argv)
     return args.func(args)

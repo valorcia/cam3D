@@ -17,7 +17,7 @@ Téléphone ──photos──▶ Ordinateur (API locale) ──▶ COLMAP (cam�
 | 2 | **Moteur de reconstruction réel** : photos → OBJ texturé → DAE | ✅ fonctionnel, testé sur un jeu de photos réel |
 | 3 | API locale FastAPI, projets, tâches, appairage | ✅ fonctionnel, testé (voir `API.md`) |
 | 4 | Interface Web (Next.js, visualiseur Three.js) | ✅ fonctionnelle, testée de bout en bout (Playwright) |
-| 5 | Capture mobile (PWA, QR code, HTTPS local) | ⏳ |
+| 5 | Capture mobile (QR code, HTTPS local, caméra, vidéo) | ✅ testée en émulation ; à valider sur iPhone/Android réels |
 | 6 | Profils qualité avancés, nettoyage interactif, étalonnage, mesures | ⏳ (profils déjà en place) |
 | 7 | Validation complète téléphone → SketchUp | ⏳ |
 

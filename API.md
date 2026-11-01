@@ -13,9 +13,9 @@ Les données sont stockées dans `CAM3D_DATA_DIR` (défaut `~/cam3D`) :
 | Appareil appairé (jeton `Authorization: Bearer …` ou `?token=` pour WebSocket/images) | tout sauf : suppression de projet, appairage, gestion des appareils |
 | Autre | `/api/health`, `/api/pair/claim`, `/api/pair/requests/{id}` uniquement |
 
-Appairage :
+Appairage (`GET /api/whoami` sert de sonde : rôle `desktop`, `device` ou `anonymous`, toujours en 200) :
 
-1. ordinateur : `POST /api/pair/sessions` → `{code, urls[], expires_at}` (QR : `GET /api/pair/qr.svg?url=…`) ;
+1. ordinateur : `POST /api/pair/sessions?next=/capture/?id=…` → `{code, urls[] (page d'installation HTTP), https_urls[], secure, expires_at}` (QR : `GET /api/pair/qr.svg?url=…`) ;
 2. téléphone : `POST /api/pair/claim {code, device_name}` → `{request_id, secret}` ;
 3. ordinateur : `GET /api/pair/pending`, puis `POST /api/pair/requests/{id}/approve` (ou `/reject`) ;
 4. téléphone : `GET /api/pair/requests/{id}?secret=…` → `{status:"approved", token}` (remis une seule fois).
@@ -45,6 +45,14 @@ de l'image, taille ≤ `CAM3D_MAX_PHOTO_MB` (60 Mo), résolution ≥ 640×480, n
 assaini (ASCII, sans chemin), jamais d'écrasement. Netteté et luminosité sont
 mesurées et renvoyées en avertissements (`floue`, `trop sombre`, `surexposée`).
 \*HEIC nécessite `pillow-heif` ; sinon un message demande le réglage « Le plus compatible ».
+
+## HTTPS local et vidéo
+
+| Méthode | Route | Rôle |
+|---|---|---|
+| GET | `/api/tls` | public : HTTPS actif, ports, empreinte de l'autorité locale |
+| GET | `/api/tls/ca.crt` | public : certificat de l'autorité locale (à installer sur le téléphone) |
+| POST | `/api/projects/{id}/video` (multipart `file`) | vidéo ≤ `CAM3D_MAX_VIDEO_MB` (2 Go) ; tâche `video` : extraction FFmpeg, images nettes et distinctes ajoutées au projet ; la vidéo originale est conservée dans `originals/videos/` |
 
 ## Traitements
 
