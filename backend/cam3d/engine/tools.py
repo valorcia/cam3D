@@ -89,8 +89,13 @@ class ToolRegistry:
 
 
 def _version_of(cmd: list[str], timeout: float = 15) -> str | None:
+    # Run in a throw-away folder: OpenMVS tools write a log file into the current
+    # directory even for --help, which would litter the user's folders.
+    import tempfile
+
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        with tempfile.TemporaryDirectory(prefix="cam3d-probe-") as tmp:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=tmp)
         text = (out.stdout or out.stderr or "").strip().splitlines()
         return text[0][:120] if text else None
     except Exception:

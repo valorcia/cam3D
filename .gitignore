@@ -9,8 +9,8 @@ node_modules/
 .next/
 out/
 # Project data (user projects stay local, never committed)
-data/
-projects/
+/data/
+/projects/
 # Build / tools
 third_party/build/
 *.log

@@ -16,3 +16,10 @@ def test_discover_tools_shape():
     assert t.pycolmap is not None
     d = t.to_dict()
     assert "openmvs_available" in d
+
+
+def test_tool_discovery_leaves_no_files_in_current_folder(tmp_path, monkeypatch):
+    """OpenMVS writes <tool>-<date>.log into the CWD even for --help: probes must not litter."""
+    monkeypatch.chdir(tmp_path)
+    discover_tools()
+    assert list(tmp_path.iterdir()) == []
