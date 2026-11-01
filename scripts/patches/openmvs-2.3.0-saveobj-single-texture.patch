@@ -1,0 +1,13 @@
+diff --git a/libs/MVS/Mesh.cpp b/libs/MVS/Mesh.cpp
+index 589ad88..4b81488 100644
+--- a/libs/MVS/Mesh.cpp
++++ b/libs/MVS/Mesh.cpp
+@@ -1573,7 +1573,7 @@ bool Mesh::SaveOBJ(const String& fileName) const
+ 		ObjModel::Group& group = model.AddGroup(_T("material_" + std::to_string(idxTexture)));
+ 		group.faces.reserve(faces.size());
+ 		FOREACH(idxFace, faces) {
+-			const auto texIdx = faceTexindices[idxFace];
++			const auto texIdx = faceTexindices.empty() ? 0 : faceTexindices[idxFace];
+ 			if (texIdx != idxTexture)
+ 			    continue;
+ 
