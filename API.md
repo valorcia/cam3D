@@ -54,6 +54,23 @@ mesurées et renvoyées en avertissements (`floue`, `trop sombre`, `surexposée`
 | GET | `/api/tls/ca.crt` | public : certificat de l'autorité locale (à installer sur le téléphone) |
 | POST | `/api/projects/{id}/video` (multipart `file`) | vidéo ≤ `CAM3D_MAX_VIDEO_MB` (2 Go) ; tâche `video` : extraction FFmpeg, images nettes et distinctes ajoutées au projet ; la vidéo originale est conservée dans `originals/videos/` |
 
+## Édition et étalonnage
+
+| Méthode | Route | Rôle |
+|---|---|---|
+| GET | `/api/projects/{id}/edits` | liste des opérations appliquées |
+| POST | `/api/projects/{id}/edits {op}` | ajoute une opération (tâche `edit`, enregistrée seulement si elle réussit) |
+| POST | `/api/projects/{id}/edits/undo` | retire la dernière opération |
+| POST | `/api/projects/{id}/edits/reset?confirm=true` | revient à l'original |
+| PUT | `/api/projects/{id}/calibration {p1, p2, distance, unit}` | étalonnage manuel (unit : mm, cm, m) |
+| DELETE | `/api/projects/{id}/calibration` | retire l'étalonnage |
+| POST | `/api/projects/{id}/exports {sketchup_level}` | profil Export SketchUp : `light`, `standard`, `detailed` |
+
+Opérations : `{"type":"crop_box","min":[x,y,z],"max":[x,y,z]}`,
+`{"type":"delete_region","matrix":[16 valeurs, vue×projection three.js],"polygon":[[x,y] NDC]}`,
+`{"type":"remove_components","min_fraction":0.05}`, `{"type":"rotate","axis":"y","degrees":90}`,
+`{"type":"recenter"}`, `{"type":"simplify","target_faces":100000}`.
+
 ## Traitements
 
 | Méthode | Route | Rôle |

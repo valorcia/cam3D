@@ -28,6 +28,7 @@ from ..events import CancelToken, StageLogger
 from ..profiles import QualityProfile
 from ..subprocess_utils import ToolError, run_tool
 from ..tools import ToolRegistry
+from ..events import fmt_int
 
 _PROGRESS_RE = re.compile(r"(\d+)\s*/\s*(\d+)")  # e.g. "Depth-map 3/11"
 
@@ -145,7 +146,7 @@ def run_densify(work_dir: Path, profile: QualityProfile, tools: ToolRegistry, lo
     n, _ = _count_ply(ply)
     if n < 1000:
         raise RuntimeError(f"Nuage dense trop pauvre ({n} points) : les images manquent probablement de recouvrement ou de texture.")
-    logger.finish(f"Nuage dense : {n:,} points".replace(",", " "), num_points=n)
+    logger.finish(f"Nuage dense : {fmt_int(n)} points", num_points=n)
     return DenseResult(str(scene), str(out), str(ply), n)
 
 
@@ -181,7 +182,7 @@ def run_mesh(work_dir: Path, profile: QualityProfile, tools: ToolRegistry, logge
         v, f = _count_ply(filtered)
     else:
         logger.log("Filtrage ignoré (trop peu de faces restantes) : maillage brut conservé")
-    logger.finish(f"Maillage : {v:,} sommets, {f:,} faces".replace(",", " "), num_vertices=v, num_faces=f)
+    logger.finish(f"Maillage : {fmt_int(v)} sommets, {fmt_int(f)} faces", num_vertices=v, num_faces=f)
     return MeshResult(dense.dense_mvs, str(ply), v, f)
 
 
@@ -210,7 +211,7 @@ def run_refine(work_dir: Path, profile: QualityProfile, tools: ToolRegistry, log
         logger.log("RefineMesh n'a rien produit, maillage non raffiné conservé")
         return mesh
     v, f = _count_ply(ply)
-    logger.finish(f"Maillage raffiné : {v:,} sommets, {f:,} faces".replace(",", " "), num_vertices=v, num_faces=f)
+    logger.finish(f"Maillage raffiné : {fmt_int(v)} sommets, {fmt_int(f)} faces", num_vertices=v, num_faces=f)
     return MeshResult(mesh.scene_mvs, str(ply), v, f)
 
 
@@ -320,6 +321,6 @@ def run_texture(work_dir: Path, profile: QualityProfile, tools: ToolRegistry, lo
         geoms = list(sc.geometry.values()) if isinstance(sc, trimesh.Scene) else [sc]
         v = sum(len(g.vertices) for g in geoms)
         f = sum(len(g.faces) for g in geoms)
-    logger.finish(f"Modèle texturé : {f:,} faces, {max(len(textures), 1)} texture(s)".replace(",", " "),
+    logger.finish(f"Modèle texturé : {fmt_int(f)} faces, {max(len(textures), 1)} texture(s)",
                   num_faces=f, textures=[Path(t).name for t in textures])
     return TextureResult(str(out), str(out.with_suffix(".mtl")) if export_type == "obj" else "", textures, v, f)

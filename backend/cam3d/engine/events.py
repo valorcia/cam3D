@@ -15,6 +15,11 @@ from pathlib import Path
 from typing import Callable
 
 
+def fmt_int(n: int | float) -> str:
+    """French thousands separator (narrow no-break space), without touching punctuation."""
+    return f"{int(n):,}".replace(",", "\u202f")
+
+
 class Stage(str, Enum):
     PREPARE = "prepare"
     SFM = "sfm"

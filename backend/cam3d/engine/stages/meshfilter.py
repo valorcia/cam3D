@@ -25,6 +25,7 @@ import trimesh
 from scipy.spatial import cKDTree
 
 from ..events import CancelToken, StageLogger
+from ..events import fmt_int
 
 
 @dataclass
@@ -111,7 +112,7 @@ def filter_mesh(mesh_ply: Path, dense_ply: Path | None, out_ply: Path, logger: S
     out.export(out_ply, file_type="ply", encoding="binary")
     rep = MeshFilterReport(n_in, len(out.faces), int(long_mask.sum()), unsupported, removed_comps, med)
     logger.log(f"Filtrage géométrique : {rep.removed_long_edges} faces trop grandes, {rep.removed_unsupported} faces sans "
-               f"support photogrammétrique, {rep.removed_components} composants isolés -> {rep.faces_out:,} faces".replace(",", " "))
+               f"support photogrammétrique, {rep.removed_components} composants isolés -> {fmt_int(rep.faces_out)} faces")
     if report_path:
         Path(report_path).write_text(json.dumps(asdict(rep), indent=2), encoding="utf-8")
     return rep

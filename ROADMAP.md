@@ -24,7 +24,7 @@
   (mkcert-like) et procédure d'approbation iPhone/Android ; repli : import depuis
   la galerie.
 
-## Phase 6 — Optimisation
+## Phase 6 — Optimisation ✅ (livrée ; reste : arbre de vocabulaire > 150 images)
 - Profils déjà en place ; ajout d'un arbre de vocabulaire pour > 150 images.
 - Nettoyage interactif (sélection, découpe, suppression, composants, simplification,
   recentrage/rotation/échelle, annulation, copie de l'original).

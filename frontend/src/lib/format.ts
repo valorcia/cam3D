@@ -104,3 +104,22 @@ export function failureAdvice(stage: string | null, error: string | null): strin
   }
   return null;
 }
+
+export type LengthUnit = "mm" | "cm" | "m";
+const PER_M: Record<LengthUnit, number> = { mm: 1000, cm: 100, m: 1 };
+
+/** A measured distance: real units only when calibrated, otherwise explicitly relative. */
+export function formatMeasure(modelDistance: number, metresPerUnit: number | null | undefined, unit: LengthUnit = "m"): string {
+  if (!metresPerUnit) return `${modelDistance.toLocaleString("fr-FR", { maximumFractionDigits: 3 })} u (non étalonné)`;
+  const v = modelDistance * metresPerUnit * PER_M[unit];
+  return `${v.toLocaleString("fr-FR", { maximumFractionDigits: unit === "mm" ? 0 : unit === "cm" ? 1 : 3 })} ${unit}`;
+}
+
+export const EDIT_LABELS: Record<string, string> = {
+  crop_box: "Découpe (boîte)",
+  delete_region: "Zone effacée",
+  remove_components: "Parties isolées supprimées",
+  rotate: "Rotation",
+  recenter: "Recentrage",
+  simplify: "Simplification",
+};

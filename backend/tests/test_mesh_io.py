@@ -37,3 +37,12 @@ def test_glb_roundtrip_keeps_uv_and_texture(cube_model, tmp_path):
     assert p.num_faces == 12 and p.uv is not None and len(p.uv) == len(p.vertices)
     assert p.texture is not None and p.texture.suffix == ".jpg" and p.texture.exists()
     assert load_glb(glb).num_faces == 12
+
+
+def test_obj_with_texture_in_parent_folder_keeps_texture(cube_model, tmp_path):
+    """Project layout: meshes/model.obj references ../textures/model_0.jpg."""
+    root = tmp_path / "project"
+    write_obj(cube_model, root / "meshes" / "model.obj", texture_dir=root / "textures", texture_rel="../textures/")
+    back = load_obj(root / "meshes" / "model.obj")
+    assert back.parts[0].texture is not None
+    assert back.parts[0].texture.resolve() == (root / "textures" / "model_0.jpg").resolve()

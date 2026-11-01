@@ -11,7 +11,16 @@ export type DisplayMode = "textured" | "clay" | "wireframe" | "points";
 type View = "iso" | "top" | "front" | "side";
 type CamType = "persp" | "ortho";
 
+export type Tool = "orbit" | "pick" | "erase";
+export interface RegionSelection { matrix: number[]; polygon: [number, number][]; count: number }
+
 interface Props {
+  tool?: Tool;
+  onPick?: (p: [number, number, number]) => void;
+  onRegion?: (r: RegionSelection | null) => void;
+  markers?: [number, number, number][];
+  cropBox?: { min: [number, number, number]; max: [number, number, number] } | null;
+  onBounds?: (b: { min: [number, number, number]; max: [number, number, number] }) => void;
   modelUrl: string;
   fullModelUrl?: string | null;   // offered when the preview is decimated
   pointCloudUrl?: string | null;
@@ -136,6 +145,29 @@ function CameraRig({ box, view, camType, nonce, controls }: { box: THREE.Box3; v
   return null;
 }
 
+function CameraGrab({ target }: { target: React.MutableRefObject<THREE.Camera | null> }) {
+  const camera = useThree((s) => s.camera);
+  useEffect(() => { target.current = camera; }, [camera, target]);
+  return null;
+}
+
+function MeasureLine({ a, b }: { a: [number, number, number]; b: [number, number, number] }) {
+  const geom = useMemo(() => new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a), new THREE.Vector3(...b)]), [a, b]);
+  useEffect(() => () => geom.dispose(), [geom]);
+  return <lineSegments geometry={geom}><lineBasicMaterial color="#fbbf24" depthTest={false} /></lineSegments>;
+}
+
+function CropBoxView({ box }: { box: { min: [number, number, number]; max: [number, number, number] } }) {
+  const b3 = useMemo(() => new THREE.Box3(new THREE.Vector3(...box.min), new THREE.Vector3(...box.max)), [box]);
+  const size = b3.getSize(new THREE.Vector3()), center = b3.getCenter(new THREE.Vector3());
+  return (
+    <group>
+      <box3Helper args={[b3, 0x8ab4ff]} />
+      <mesh position={center}><boxGeometry args={[size.x, size.y, size.z]} /><meshBasicMaterial color="#8ab4ff" transparent opacity={0.08} depthWrite={false} /></mesh>
+    </group>
+  );
+}
+
 function Invalidate({ deps }: { deps: unknown[] }) {
   const invalidate = useThree((s) => s.invalidate);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -156,7 +188,8 @@ function Capture({ when, onCapture }: { when: number; onCapture?: (b: Blob) => v
   return null;
 }
 
-export default function Viewer3D({ modelUrl, fullModelUrl, pointCloudUrl, info, onCapture, autoCapture }: Props) {
+export default function Viewer3D({ modelUrl, fullModelUrl, pointCloudUrl, info, onCapture, autoCapture,
+  tool = "orbit", onPick, onRegion, markers = [], cropBox = null, onBounds }: Props) {
   const [mode, setMode] = useState<DisplayMode>("textured");
   const [camType, setCamType] = useState<CamType>("persp");
   const [view, setView] = useState<View>("iso");
@@ -167,6 +200,10 @@ export default function Viewer3D({ modelUrl, fullModelUrl, pointCloudUrl, info, 
   const [captureTick, setCaptureTick] = useState(0);
   const controls = useRef<any>(null);
   const wrap = useRef<HTMLDivElement>(null);
+  const camRef = useRef<THREE.Camera | null>(null);
+  const [rect, setRect] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [selection, setSelection] = useState<THREE.BufferGeometry | null>(null);
+  const dragging = useRef(false);
 
   const glb = useGLB(useFull && fullModelUrl ? fullModelUrl : modelUrl);
   const ply = usePLY(mode === "points" ? pointCloudUrl ?? null : null);
@@ -179,6 +216,56 @@ export default function Viewer3D({ modelUrl, fullModelUrl, pointCloudUrl, info, 
   }, [autoCapture, glb.data]);
 
   const box = glb.data?.box ?? null;
+  useEffect(() => {
+    if (box && onBounds) onBounds({ min: box.min.toArray() as [number, number, number], max: box.max.toArray() as [number, number, number] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [box]);
+  useEffect(() => { if (tool !== "erase") { setRect(null); setSelection(null); } }, [tool]);
+  useEffect(() => () => selection?.dispose(), [selection]);
+
+  /** Faces whose centroid projects inside the rectangle: same rule as the server (edit.py). */
+  function computeSelection(r: { x0: number; y0: number; x1: number; y1: number }) {
+    const el = wrap.current?.querySelector("canvas");
+    const cam = camRef.current;
+    if (!el || !cam || !glb.data) return;
+    const W = el.clientWidth, H = el.clientHeight;
+    const toNdc = (x: number, y: number): [number, number] => [(x / W) * 2 - 1, -((y / H) * 2 - 1)];
+    const [ax, ay] = toNdc(Math.min(r.x0, r.x1), Math.min(r.y0, r.y1));
+    const [bx, by] = toNdc(Math.max(r.x0, r.x1), Math.max(r.y0, r.y1));
+    const polygon: [number, number][] = [[ax, by], [bx, by], [bx, ay], [ax, ay]];
+    cam.updateMatrixWorld();
+    const vp = new THREE.Matrix4().multiplyMatrices((cam as any).projectionMatrix, cam.matrixWorldInverse);
+    const e = vp.elements;
+    const out: number[] = [];
+    let count = 0;
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    glb.data.object.updateMatrixWorld();
+    glb.data.object.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const pos = m.geometry.attributes.position;
+      const idx = m.geometry.index;
+      const nf = idx ? idx.count / 3 : pos.count / 3;
+      for (let f = 0; f < nf; f++) {
+        const i0 = idx ? idx.getX(3 * f) : 3 * f, i1 = idx ? idx.getX(3 * f + 1) : 3 * f + 1, i2 = idx ? idx.getX(3 * f + 2) : 3 * f + 2;
+        a.fromBufferAttribute(pos, i0).applyMatrix4(m.matrixWorld);
+        b.fromBufferAttribute(pos, i1).applyMatrix4(m.matrixWorld);
+        c.fromBufferAttribute(pos, i2).applyMatrix4(m.matrixWorld);
+        const x = (a.x + b.x + c.x) / 3, y = (a.y + b.y + c.y) / 3, z = (a.z + b.z + c.z) / 3;
+        const w = e[3] * x + e[7] * y + e[11] * z + e[15];
+        if (w <= 1e-9) continue;
+        const nx = (e[0] * x + e[4] * y + e[8] * z + e[12]) / w, ny = (e[1] * x + e[5] * y + e[9] * z + e[13]) / w;
+        if (nx >= ax && nx <= bx && ny >= by && ny <= ay) {
+          count++;
+          out.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+        }
+      }
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(out, 3));
+    setSelection(g);
+    onRegion?.(count ? { matrix: Array.from(e), polygon, count } : null);
+  }
   const radius = useMemo(() => (box ? box.getBoundingSphere(new THREE.Sphere()).radius : 1), [box]);
   const gridSize = useMemo(() => {
     if (!box) return 10;
@@ -204,24 +291,43 @@ export default function Viewer3D({ modelUrl, fullModelUrl, pointCloudUrl, info, 
       <div className="relative h-[62dvh] min-h-[320px] w-full sm:h-[68vh]">
         {/* Render on demand only (battery / CPU): controls, loads and toolbar changes invalidate. */}
         <Canvas frameloop="demand" dpr={[1, 2]} gl={{ antialias: true, preserveDrawingBuffer: true }} data-testid="viewer-canvas">
-          <Invalidate deps={[mode, grid, axes, glb.data, pointsObj, camType, nonce]} />
+          <Invalidate deps={[mode, grid, axes, glb.data, pointsObj, camType, nonce, markers, cropBox, selection]} />
           <color attach="background" args={["#0d0f13"]} />
           {camType === "persp" ? <PerspectiveCamera makeDefault fov={45} /> : <OrthographicCamera makeDefault />}
           <hemisphereLight args={[0xffffff, 0x30343c, 1.1]} />
           <directionalLight position={[3, 5, 4]} intensity={1.6} />
           <directionalLight position={[-4, 2, -3]} intensity={0.5} />
-          {glb.data && mode !== "points" && <primitive object={glb.data.object} />}
+          <CameraGrab target={camRef} />
+          {glb.data && mode !== "points" && (
+            <primitive object={glb.data.object}
+              onClick={(e: any) => { if (tool === "pick" && e.delta < 5) { e.stopPropagation(); onPick?.(e.point.toArray()); } }} />
+          )}
+          {markers.map((m, i) => (
+            <mesh key={i} position={m}><sphereGeometry args={[radius / 120, 16, 16]} /><meshBasicMaterial color={i === 0 ? "#fbbf24" : "#4ade80"} depthTest={false} /></mesh>
+          ))}
+          {markers.length === 2 && <MeasureLine a={markers[0]} b={markers[1]} />}
+          {cropBox && <CropBoxView box={cropBox} />}
+          {selection && <mesh geometry={selection} renderOrder={2}><meshBasicMaterial color="#f87171" transparent opacity={0.55} depthTest={false} side={THREE.DoubleSide} /></mesh>}
           {mode === "points" && pointsObj && <primitive object={pointsObj} />}
           {grid && box && <gridHelper args={[gridSize, 20, 0x3a3f4b, 0x22262e]} position={[0, 0, 0]} />}
           {axes && box && <axesHelper args={[radius * 0.6]} />}
           {box && <CameraRig box={box} view={view} camType={camType} nonce={nonce} controls={controls} />}
-          <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={0.12} />
+          <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={0.12} enabled={tool !== "erase"} />
           <GizmoHelper alignment="bottom-right" margin={[56, 56]}>
             <GizmoViewport axisColors={["#f87171", "#4ade80", "#60a5fa"]} labelColor="#0a0b0e" />
           </GizmoHelper>
           <Capture when={captureTick} onCapture={onCapture} />
         </Canvas>
 
+        {tool === "erase" && (
+          <div className="absolute inset-0 cursor-crosshair" data-testid="erase-overlay" style={{ touchAction: "none" }}
+            onPointerDown={(e) => { const r = e.currentTarget.getBoundingClientRect(); dragging.current = true; (e.target as HTMLElement).setPointerCapture(e.pointerId); setRect({ x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top }); }}
+            onPointerMove={(e) => { if (!dragging.current) return; const r = e.currentTarget.getBoundingClientRect(); setRect((p) => p && { ...p, x1: e.clientX - r.left, y1: e.clientY - r.top }); }}
+            onPointerUp={() => { dragging.current = false; if (rect && Math.abs(rect.x1 - rect.x0) > 4 && Math.abs(rect.y1 - rect.y0) > 4) computeSelection(rect); }}>
+            {rect && <div className="pointer-events-none absolute border-2 border-danger bg-danger/10"
+              style={{ left: Math.min(rect.x0, rect.x1), top: Math.min(rect.y0, rect.y1), width: Math.abs(rect.x1 - rect.x0), height: Math.abs(rect.y1 - rect.y0) }} />}
+          </div>
+        )}
         {loading && (
           <div className="pointer-events-none absolute inset-0 grid place-items-center">
             <div className="flex items-center gap-3 rounded-xl bg-black/60 px-4 py-2.5 text-sm text-muted backdrop-blur">

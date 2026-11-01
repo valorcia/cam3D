@@ -3,7 +3,9 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
+import { EditPanel, type PanelMode, toolFor } from "@/components/EditPanel";
 import { ExportPanel } from "@/components/ExportPanel";
+import type { RegionSelection } from "@/components/Viewer3D";
 import { IconBack } from "@/components/Icons";
 import { PhotoPanel } from "@/components/PhotoPanel";
 import { ProcessPanel } from "@/components/ProcessPanel";
@@ -38,6 +40,13 @@ function ProjectView() {
   const [name, setName] = useState("");
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
+  type Vec = [number, number, number];
+  const [mode, setMode] = useState<PanelMode>("none");
+  const [points, setPoints] = useState<Vec[]>([]);
+  const [region, setRegion] = useState<RegionSelection | null>(null);
+  const [bounds, setBounds] = useState<{ min: Vec; max: Vec } | null>(null);
+  const [crop, setCrop] = useState<{ min: Vec; max: Vec } | null>(null);
+  useEffect(() => { setRegion(null); }, [mode]);
 
   useEffect(() => {
     if (!whoami || !id) return;
@@ -89,14 +98,24 @@ function ProjectView() {
         {tab === "photos" && <PhotoPanel project={p} locked={locked} onChange={refresh} />}
         {tab === "process" && <ProcessPanel project={p} onChange={refresh} onShowModel={() => go("model")} />}
         {tab === "model" && (p.has_model ? (
-          <Viewer3D
-            modelUrl={url(`/api/projects/${p.id}/preview.glb?v=${Math.round(p.updated_at)}`)}
-            fullModelUrl={p.preview?.decimated ? url(`/api/projects/${p.id}/preview.glb?full=true&v=${Math.round(p.updated_at)}`) : null}
-            pointCloudUrl={p.preview?.pointcloud_points ? url(`/api/projects/${p.id}/pointcloud.ply?v=${Math.round(p.updated_at)}`) : null}
-            info={p.preview}
-            autoCapture={!p.thumbnail_3d}
-            onCapture={(blob) => api.putThumbnail(p.id, blob).catch(() => undefined)}
-          />
+          <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+            <Viewer3D
+              modelUrl={url(`/api/projects/${p.id}/preview.glb?v=${Math.round(p.updated_at)}`)}
+              fullModelUrl={p.preview?.decimated ? url(`/api/projects/${p.id}/preview.glb?full=true&v=${Math.round(p.updated_at)}`) : null}
+              pointCloudUrl={p.preview?.pointcloud_points ? url(`/api/projects/${p.id}/pointcloud.ply?v=${Math.round(p.updated_at)}`) : null}
+              info={p.preview}
+              autoCapture={!p.thumbnail_3d}
+              onCapture={(blob) => api.putThumbnail(p.id, blob).catch(() => undefined)}
+              tool={toolFor(mode)}
+              onPick={(pt) => setPoints((cur) => (cur.length >= 2 ? [pt] : [...cur, pt]))}
+              onRegion={setRegion}
+              markers={points}
+              cropBox={mode === "crop" ? crop : null}
+              onBounds={setBounds}
+            />
+            <EditPanel project={p} mode={mode} setMode={setMode} points={points} setPoints={setPoints} region={region}
+              bounds={bounds} crop={crop} setCrop={setCrop} onChange={refresh} />
+          </div>
         ) : (
           <div className="card p-6 text-sm text-muted">Le modèle 3D apparaîtra ici après la reconstruction. <button className="text-accent hover:underline" onClick={() => go("process")}>Lancer la reconstruction</button></div>
         ))}

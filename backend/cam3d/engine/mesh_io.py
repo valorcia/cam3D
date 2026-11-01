@@ -101,15 +101,16 @@ def load_obj(path: Path) -> TexturedModel:
         if isinstance(vis, trimesh.visual.TextureVisuals) and vis.uv is not None and len(vis.uv) == len(g.vertices):
             uv = np.asarray(vis.uv, dtype=np.float32)
             mat = vis.material
-            img = getattr(mat, "image", None)
-            if img is None and hasattr(mat, "baseColorTexture"):
-                img = mat.baseColorTexture
-            if img is not None:
-                # trimesh keeps the texture file name in material.name / kwargs when loaded from MTL
-                src = _find_texture_file(path, mat)
-                if src is not None:
-                    tex = src
-                else:  # fall back: dump the in-memory image next to the OBJ
+            # Resolve map_Kd ourselves from the MTL: trimesh refuses relative paths that leave the
+            # OBJ's folder (e.g. "../textures/x.jpg") and then silently returns no image.
+            src = _find_texture_file(path, mat)
+            if src is not None:
+                tex = src
+            else:
+                img = getattr(mat, "image", None)
+                if img is None and hasattr(mat, "baseColorTexture"):
+                    img = mat.baseColorTexture
+                if img is not None:  # texture only available in memory: dump it next to the OBJ
                     tex = path.parent / f"{path.stem}_{len(model.parts)}.png"
                     img.save(tex)
             d = getattr(mat, "diffuse", None)

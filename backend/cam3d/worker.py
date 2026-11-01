@@ -36,12 +36,14 @@ def _event_to_dict(ev) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="cam3d.worker")
-    p.add_argument("kind", choices=["reconstruct", "export", "video"])
+    p.add_argument("kind", choices=["reconstruct", "export", "video", "edit", "sketchup"])
     p.add_argument("project")
     p.add_argument("--profile", default="fast")
     p.add_argument("--formats", default="obj,glb,dae")
     p.add_argument("--resume", action="store_true")
     p.add_argument("--video", default=None, help="video file name inside originals/videos/")
+    p.add_argument("--ops-file", default=None, help="JSON file with the edit list to apply (edit)")
+    p.add_argument("--level", default="standard", help="SketchUp level: light|standard|detailed")
     a = p.parse_args(argv)
 
     from .engine.events import CancelToken
@@ -91,6 +93,32 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:  # noqa: BLE001
             lg.fail(str(e))
             emit({"type": "result", "result": {"success": False, "error": str(e), "error_stage": "prepare"}})
+            return 3
+        finally:
+            lg.close()
+
+    if a.kind in ("edit", "sketchup"):
+        from .engine.events import Stage, StageLogger
+        from .engine.tools import discover_tools
+
+        stage = Stage.CLEANUP if a.kind == "edit" else Stage.EXPORT
+        lg = StageLogger(stage, project / "logs", lambda ev: emit(_event_to_dict(ev)))
+        try:
+            if a.kind == "edit":
+                from .engine.edit_runner import replay
+
+                ops = json.loads(Path(a.ops_file).read_text(encoding="utf-8"))["ops"]
+                rep = replay(project, ops, discover_tools(), lg, cancel)
+                emit({"type": "result", "result": {"success": True, **rep}})
+            else:
+                from .engine.sketchup import export_sketchup
+
+                res = export_sketchup(project, a.level, discover_tools(), lg, cancel)
+                emit({"type": "result", "result": {"success": True, "exports": [asdict(res)]}})
+            return 0
+        except Exception as e:  # noqa: BLE001
+            lg.fail(str(e))
+            emit({"type": "result", "result": {"success": False, "error": str(e), "error_stage": stage.value}})
             return 3
         finally:
             lg.close()

@@ -136,7 +136,7 @@ class JobManager:
                formats: list[str] | tuple[str, ...] = ("obj", "glb", "dae"), resume: bool = False,
                params: dict | None = None) -> dict:
         p = self.projects.get(project_id)
-        if kind not in ("reconstruct", "export", "video"):
+        if kind not in ("reconstruct", "export", "video", "edit", "sketchup"):
             raise ProjectError("Type de tâche inconnu")
         if profile not in PROFILES:
             raise ProjectError(f"Profil inconnu : {profile}")
@@ -148,10 +148,10 @@ class JobManager:
             raise ProjectError("Un traitement est déjà en cours pour ce projet", 409)
         if kind == "reconstruct" and p["photo_count"] < 3:
             raise ProjectError("Au moins 3 photos sont nécessaires (20 à 80 recommandées)", 422)
-        if kind == "export":
+        if kind in ("export", "edit", "sketchup"):
             if not (self.projects.path(project_id) / "meshes" / "model.obj").exists():
                 raise ProjectError("Aucun modèle à exporter : lancez d'abord une reconstruction", 409)
-            if not formats:
+            if kind == "export" and not formats:
                 raise ProjectError("Aucun format demandé")
         if kind == "video" and not (params or {}).get("video"):
             raise ProjectError("Aucune vidéo indiquée")
@@ -287,6 +287,12 @@ class JobManager:
             cmd.append("--resume")
         if j["kind"] == "video":
             cmd += ["--video", j["params"]["video"]]
+        if j["kind"] == "edit":
+            ops_file = proj / "processed" / f"edits_pending_{jid}.json"
+            ops_file.write_text(json.dumps({"ops": j["params"].get("ops", [])}), encoding="utf-8")
+            cmd += ["--ops-file", str(ops_file)]
+        if j["kind"] == "sketchup":
+            cmd += ["--level", j["params"].get("level", "standard")]
         started = now()
         self.db.update("jobs", {"id": jid}, {"status": "running", "started_at": started})
         if j["kind"] == "reconstruct":
@@ -332,6 +338,7 @@ class JobManager:
                 proc.wait()
             finally:
                 self._procs.pop(jid, None)
+        (proj / "processed" / f"edits_pending_{jid}.json").unlink(missing_ok=True)
         cancelled = jid in self._cancel_requested
         self._cancel_requested.discard(jid)
         (proj / "processed" / "CANCEL").unlink(missing_ok=True)
@@ -355,6 +362,11 @@ class JobManager:
             if added < 3:
                 values.update(status="failed", error=f"Seulement {added} image(s) valide(s) extraite(s) de la vidéo")
         self.db.update("jobs", {"id": jid}, values)
+        if j["kind"] == "edit" and values["status"] == "succeeded":
+            try:
+                self.projects.refresh_model_info(pid)
+            except ProjectError:
+                pass
         if j["kind"] == "reconstruct":
             try:
                 if values["status"] == "succeeded":

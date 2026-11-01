@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import time
 from urllib.parse import quote
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ from .network import lan_addresses
 from .projects import ProjectError, ProjectStore
 from .security import PairingError, PairingManager
 from .tls import TlsPaths, ca_info
+from ..engine.edit import EditState as EditStateLazy
 
 LOG_STAGES = [s.value for s in Stage] + ["pipeline", "worker"]
 TOKEN_COOKIE = "cam3d_token"
@@ -59,7 +61,19 @@ class ReconstructRequest(BaseModel):
 
 
 class ExportRequest(BaseModel):
-    formats: list[str]
+    formats: list[str] = Field(default_factory=list)
+    sketchup_level: str | None = None
+
+
+class EditRequest(BaseModel):
+    op: dict
+
+
+class CalibrationRequest(BaseModel):
+    p1: list[float] = Field(min_length=3, max_length=3)
+    p2: list[float] = Field(min_length=3, max_length=3)
+    distance: float = Field(gt=0)
+    unit: str = Field(pattern="^(mm|cm|m)$")
 
 
 class PairClaim(BaseModel):
@@ -162,6 +176,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         p["exports"] = projects.list_exports(pid)
         p["active_job"] = jobs.active_job(pid)
         p["estimates"] = {name: jobs.estimate(name, p["photo_count"]) for name in PROFILES}
+        cf = projects.path(pid) / "processed" / "calibration.json"
+        p["calibration"] = json.loads(cf.read_text(encoding="utf-8")) if cf.exists() else None
+        p["edits"] = EditStateLazy.load(projects.path(pid) / "processed" / "edits.json").ops
         pj = projects.path(pid) / "previews" / "preview.json"
         try:
             p["preview"] = json.loads(pj.read_text(encoding="utf-8")) if pj.exists() else None
@@ -350,7 +367,84 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/projects/{pid}/exports", status_code=202)
     def request_export(pid: str, body: ExportRequest, _: Principal = Depends(principal)):
+        if body.sketchup_level:
+            from ..engine.sketchup import LEVELS
+
+            if body.sketchup_level not in LEVELS:
+                raise HTTPException(400, "Niveau SketchUp inconnu (light, standard, detailed)")
+            return jobs.submit(pid, "sketchup", "fast", [], params={"level": body.sketchup_level})
         return jobs.submit(pid, "export", "fast", body.formats)
+
+    # ------------------------------------------------------------------ editing (non destructive)
+    from ..engine.edit import EditError, EditState, validate_op
+
+    def _edits_path(pid: str) -> Path:
+        return projects.path(pid) / "processed" / "edits.json"
+
+    @app.get("/api/projects/{pid}/edits")
+    def get_edits(pid: str, _: Principal = Depends(principal)):
+        projects.get(pid)
+        return {"ops": EditState.load(_edits_path(pid)).ops}
+
+    @app.post("/api/projects/{pid}/edits", status_code=202)
+    def add_edit(pid: str, body: EditRequest, _: Principal = Depends(principal)):
+        try:
+            op = validate_op(body.op)
+        except EditError as e:
+            raise HTTPException(400, str(e))
+        ops = EditState.load(_edits_path(pid)).ops + [op]
+        return jobs.submit(pid, "edit", "fast", [], params={"ops": ops, "action": op["type"]})
+
+    @app.post("/api/projects/{pid}/edits/undo", status_code=202)
+    def undo_edit(pid: str, _: Principal = Depends(principal)):
+        ops = EditState.load(_edits_path(pid)).ops
+        if not ops:
+            raise HTTPException(409, "Aucune modification à annuler")
+        return jobs.submit(pid, "edit", "fast", [], params={"ops": ops[:-1], "action": "undo"})
+
+    @app.post("/api/projects/{pid}/edits/reset", status_code=202)
+    def reset_edits(pid: str, confirm: bool = False, _: Principal = Depends(principal)):
+        if not confirm:
+            raise HTTPException(400, "Confirmation requise (?confirm=true) : toutes les modifications seront retirées")
+        return jobs.submit(pid, "edit", "fast", [], params={"ops": [], "action": "reset"})
+
+    # ------------------------------------------------------------------ scale calibration
+    def _calib_path(pid: str) -> Path:
+        return projects.path(pid) / "processed" / "calibration.json"
+
+    @app.put("/api/projects/{pid}/calibration")
+    def set_calibration(pid: str, body: CalibrationRequest, _: Principal = Depends(principal)):
+        projects.get(pid)
+        if jobs.active_job(pid):
+            raise HTTPException(409, "Un traitement est en cours pour ce projet")
+        import numpy as np
+
+        d_model = float(np.linalg.norm(np.subtract(body.p2, body.p1)))
+        if d_model <= 1e-9:
+            raise HTTPException(400, "Les deux points sont confondus")
+        metres = body.distance * {"mm": 1e-3, "cm": 1e-2, "m": 1.0}[body.unit]
+        calib = {"method": "manual", "metres_per_unit": metres / d_model, "p1": body.p1, "p2": body.p2,
+                 "distance": body.distance, "unit": body.unit, "model_distance": d_model, "created_at": time.time()}
+        _calib_path(pid).write_text(json.dumps(calib, indent=2), encoding="utf-8")
+        _clear_exports(pid)
+        projects.set_status(pid, projects.get(pid)["status"])  # touch + metadata.json
+        return calib
+
+    @app.delete("/api/projects/{pid}/calibration")
+    def delete_calibration(pid: str, _: Principal = Depends(principal)):
+        projects.get(pid)
+        if jobs.active_job(pid):
+            raise HTTPException(409, "Un traitement est en cours pour ce projet")
+        _calib_path(pid).unlink(missing_ok=True)
+        _clear_exports(pid)
+        return {"method": None}
+
+    def _clear_exports(pid: str) -> None:
+        import shutil
+
+        d = projects.path(pid) / "exports"
+        shutil.rmtree(d, ignore_errors=True)
+        d.mkdir(exist_ok=True)
 
     @app.get("/api/projects/{pid}/exports/{filename}")
     def download_export(pid: str, filename: str, _: Principal = Depends(principal)):

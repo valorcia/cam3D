@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { failureAdvice, formatBytes, formatDuration, reduceStages } from "./format";
+import { failureAdvice, formatBytes, formatDuration, formatMeasure, reduceStages } from "./format";
 
 describe("format", () => {
   it("formats bytes in French units", () => {
@@ -41,5 +41,16 @@ describe("failureAdvice", () => {
   it("explains SfM failures", () => {
     expect(failureAdvice("sfm", "COLMAP n'a pu enregistrer aucune caméra")).toMatch(/recouvrement/);
     expect(failureAdvice("export", "Traitement annulé")).toBeNull();
+  });
+});
+
+describe("formatMeasure", () => {
+  it("never presents an uncalibrated distance as a real measure", () => {
+    expect(formatMeasure(1.2345, null)).toBe("1,235 u (non étalonné)");
+  });
+  it("converts calibrated distances", () => {
+    expect(formatMeasure(2, 0.5, "m")).toBe("1 m");
+    expect(formatMeasure(2, 0.5, "cm")).toBe("100 cm");
+    expect(formatMeasure(0.0123, 1, "mm")).toBe("12 mm");
   });
 });

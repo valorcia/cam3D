@@ -317,6 +317,11 @@ def test_export_job_with_real_worker(tmp_path, cube_model):
         assert j["status"] == "succeeded", j
         files = {e["file"]: e for e in c.get(f"/api/projects/{pid}/exports").json()}
         assert {"model_dae.zip", "model_obj.zip", "model.stl"} <= set(files)
+        import zipfile
+        for z in ("model_dae.zip", "model_obj.zip"):  # re-exports from meshes/model.obj keep the texture
+            names = zipfile.ZipFile(root / "exports" / z).namelist()
+            assert any(n.endswith(".jpg") for n in names), (z, names)
+        assert files["model_dae.zip"]["textured"] is True
         assert files["model.stl"]["textured"] is False
         d = c.get(f"/api/projects/{pid}/exports/model_dae.zip")
         assert d.status_code == 200 and d.content[:2] == b"PK"
@@ -376,3 +381,65 @@ def test_video_import_extracts_distinct_sharp_frames(tmp_path):
         assert all(not p["warnings"] for p in photos), [(p["name"], p["warnings"], p["sharpness"], p["brightness"]) for p in photos]
         assert (settings.projects_dir / pid / "originals" / "videos" / "walk.mp4").exists()  # original kept
         assert any(e["progress"] is not None for e in j["events"])  # measured progress
+
+
+# ---------------------------------------------------------------- non-destructive editing + calibration (real worker)
+def test_edit_undo_reset_and_calibrated_export(tmp_path, cube_model):
+    import collada
+
+    from cam3d.engine.edit_runner import save_originals
+    from cam3d.engine.mesh_io import write_obj
+    from conftest import make_cube_part
+
+    settings = Settings(data_dir=tmp_path / "data", trusted_hosts=frozenset({"127.0.0.1"}))
+    app = create_app(settings)
+    with TestClient(app, client=("127.0.0.1", 1)) as c:
+        pid = c.post("/api/projects", json={"name": "Edition"}).json()["id"]
+        root = settings.projects_dir / pid
+        cube_model.parts.append(make_cube_part("far", offset=(6, 0.5, 0), texture=cube_model.parts[0].texture))
+        write_obj(cube_model, root / "meshes" / "model.obj", texture_dir=root / "textures", texture_rel="../textures/")
+        save_originals(root, cube_model)
+        original = (root / "meshes" / "original" / "model.obj").read_bytes()
+
+        r = c.post(f"/api/projects/{pid}/edits", json={"op": {"type": "crop_box", "min": [-1, -1, -1], "max": [1, 2, 1]}})
+        assert r.status_code == 202
+        j = wait_job(c, r.json()["id"], timeout=60)
+        assert j["status"] == "succeeded", j
+        p = c.get(f"/api/projects/{pid}").json()
+        assert p["model_faces"] == 12 and len(p["edits"]) == 1
+        assert (root / "meshes" / "original" / "model.obj").read_bytes() == original  # source untouched
+        assert "map_Kd" in (root / "meshes" / "original" / "model.mtl").read_text()   # original keeps its texture
+        assert list((root / "textures").glob("model_*.jpg")), "edited model lost its texture"
+        import trimesh
+        g = list(trimesh.load(root / "previews" / "model.glb").geometry.values())[0]
+        assert g.visual.material.baseColorTexture is not None, "edited preview lost its texture"
+
+        # an edit that would delete everything fails and is NOT recorded
+        r = c.post(f"/api/projects/{pid}/edits", json={"op": {"type": "crop_box", "min": [50, 50, 50], "max": [51, 51, 51]}})
+        j = wait_job(c, r.json()["id"], timeout=60)
+        assert j["status"] == "failed" and "tout le modèle" in j["error"]
+        assert len(c.get(f"/api/projects/{pid}/edits").json()["ops"]) == 1
+
+        j = wait_job(c, c.post(f"/api/projects/{pid}/edits/undo").json()["id"], timeout=60)
+        assert j["status"] == "succeeded" and c.get(f"/api/projects/{pid}").json()["model_faces"] == 24
+        assert c.post(f"/api/projects/{pid}/edits/undo").status_code == 409
+        assert c.post(f"/api/projects/{pid}/edits/reset").status_code == 400  # confirmation required
+
+        # calibration: the two cubes' centres are 6 units apart -> say 3 m
+        assert c.put(f"/api/projects/{pid}/calibration", json={"p1": [0, 0.5, 0], "p2": [0, 0.5, 0], "distance": 1, "unit": "m"}).status_code == 400
+        cal = c.put(f"/api/projects/{pid}/calibration", json={"p1": [0, 0.5, 0], "p2": [6, 0.5, 0], "distance": 300, "unit": "cm"}).json()
+        assert cal["method"] == "manual" and abs(cal["metres_per_unit"] - 0.5) < 1e-12
+        assert c.get(f"/api/projects/{pid}").json()["calibration"]["method"] == "manual"
+        j = wait_job(c, c.post(f"/api/projects/{pid}/exports", json={"formats": ["dae", "stl"]}).json()["id"], timeout=60)
+        assert j["status"] == "succeeded", j
+        ex = {e["file"]: e for e in c.get(f"/api/projects/{pid}/exports").json()}
+        assert "étalonnée" in ex["model_dae.zip"]["note"]
+        doc = collada.Collada(str(root / "exports" / "model_dae" / "model.dae"))
+        xs = np.concatenate([p.vertex[:, 0] for g in doc.geometries for p in g.primitives])
+        assert abs((xs.max() - xs.min()) - 3.5) < 1e-6   # (6 + 1) units * 0.5 m
+        import trimesh
+        stl = trimesh.load(root / "exports" / "model.stl")
+        assert abs(stl.extents[0] - 3.5) < 1e-6
+        # removing the calibration also removes the exports made with it
+        c.delete(f"/api/projects/{pid}/calibration")
+        assert c.get(f"/api/projects/{pid}/exports").json() == []

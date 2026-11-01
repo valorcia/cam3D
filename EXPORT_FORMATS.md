@@ -37,9 +37,30 @@ import Blender 4.5.15 (UV layer présent, image trouvée, rendu Cycles).
 **L'import dans SketchUp n'a pas encore été testé sur une installation réelle** ;
 protocole prévu dans TESTING.md.
 
-## Profil « Export SketchUp » (phase 6)
+## Profil « Export SketchUp »
 
-Étapes prévues : préparation de la géométrie, application de l'échelle
-étalonnée, orientation Z-up (déjà fait), **simplification à plusieurs niveaux
-en re-texturant un maillage décimé** (50 k / 150 k / 500 k faces) pour rester
-fluide dans SketchUp, vérification de cohérence des chemins de textures, zip.
+Onglet Exports › Export SketchUp, trois niveaux :
+
+| Niveau | Faces max | Usage |
+|---|---|---|
+| Léger | 50 000 | tout ordinateur, maquettes d'implantation |
+| Standard | 150 000 | bon compromis |
+| Détaillé | 400 000 | ordinateur récent |
+
+Étapes réellement exécutées (`engine/sketchup.py`) :
+
+1. part du modèle **édité** courant (nettoyage, découpe, rotations) ;
+2. applique l'**échelle étalonnée** (mètres) si elle existe ;
+3. orientation : repère canonique (verticale, murs sur les axes, façade
+   photographiée vers l'avant), écrit en **Z vers le haut** ;
+4. réduit le nombre de polygones par décimation OpenMVS ;
+5. **re-projette les photos** sur le maillage réduit (nouvel atlas propre, au
+   lieu de déformer les UV existantes) ;
+6. écrit le DAE ;
+7. regroupe `.dae` + `textures/` dans `model_sketchup_<niveau>.zip` ;
+8. **relit et vérifie** le DAE : axe Z, unité mètre, UV, matériaux liés,
+   textures présentes et en chemins relatifs, nombre de faces. L'export échoue
+   explicitement si une vérification ne passe pas.
+
+Tous les formats (OBJ, GLB, STL, PLY, DAE) sont écrits en mètres lorsque le
+modèle est étalonné ; sinon la note de l'export rappelle que l'échelle est relative.

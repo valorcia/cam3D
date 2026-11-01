@@ -22,6 +22,7 @@ import trimesh
 
 from ..events import CancelToken, StageLogger
 from ..mesh_io import MeshPart, TexturedModel
+from ..events import fmt_int
 
 
 @dataclass
@@ -206,5 +207,5 @@ def run_cleanup(model: TexturedModel, logger: StageLogger, up_vector: list[float
     rep = CleanupReport(before, model.num_faces, comps, degen, up.tolist(), M.tolist(), info)
     if report_path:
         Path(report_path).write_text(json.dumps(asdict(rep), indent=2), encoding="utf-8")
-    logger.finish(f"{rep.faces_after:,} faces conservées sur {before:,}".replace(",", " "), **{k: v for k, v in asdict(rep).items() if k != "transform"})
+    logger.finish(f"{fmt_int(rep.faces_after)} faces conservées sur {fmt_int(before)}", **{k: v for k, v in asdict(rep).items() if k != "transform"})
     return rep

@@ -18,7 +18,7 @@ Téléphone ──photos──▶ Ordinateur (API locale) ──▶ COLMAP (cam�
 | 3 | API locale FastAPI, projets, tâches, appairage | ✅ fonctionnel, testé (voir `API.md`) |
 | 4 | Interface Web (Next.js, visualiseur Three.js) | ✅ fonctionnelle, testée de bout en bout (Playwright) |
 | 5 | Capture mobile (QR code, HTTPS local, caméra, vidéo) | ✅ testée en émulation ; à valider sur iPhone/Android réels |
-| 6 | Profils qualité avancés, nettoyage interactif, étalonnage, mesures | ⏳ (profils déjà en place) |
+| 6 | Nettoyage non destructif, simplification re-texturée, étalonnage, mesures, Export SketchUp | ✅ fonctionnel, testé |
 | 7 | Validation complète téléphone → SketchUp | ⏳ |
 
 Ce qui a été **réellement testé** à ce jour est décrit dans `TESTING.md`.

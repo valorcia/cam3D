@@ -2,7 +2,7 @@
 
 ## Tests unitaires (synthétiques, rapides)
 
-`cd backend && pytest -q -p no:dash` — 30 tests moteur + API, < 10 s. Moteur :
+`cd backend && pytest -q -p no:dash` — 40 tests moteur + API, < 30 s. Moteur :
 
 - profils distincts, erreurs sur profil inconnu ;
 - détection matérielle et découverte d'outils sans exception ;
@@ -133,6 +133,40 @@ Safari iOS ne l'implémente pas et capture le flux vidéo (souvent 1920×1080 à
 Les tests ont révélé et fait corriger : une tâche vidéo publiée « réussie »
 avant l'import de ses images, une image floue conservée au détriment de la
 version nette de la même vue, et des erreurs 401 parasites avant appairage.
+
+## Édition, mesures, Export SketchUp (`frontend/tests/e2e_edit.mjs`)
+
+Sur un projet réellement reconstruit (15 photos prises dans le navigateur),
+1er novembre 2026, **8/8 scénarios réussis** :
+
+| Scénario | Résultat |
+|---|---|
+| Mesure avant étalonnage : affichée « … u (non étalonné) » | OK |
+| Étalonnage manuel (2 points touchés sur le modèle + 1000 cm), statut « Étalonné manuellement », mesure suivante en cm | OK |
+| Découpe par boîte (curseur Y max) : moins de faces, entrée dans l'historique | 30 s |
+| Rectangle tracé à l'écran : aperçu rouge des faces visées, effacement | 11 s |
+| Rotation 90° puis annulation : historique revenu à 2 opérations | 16 s |
+| Aperçu après édition toujours texturé (image présente dans le GLB) | OK |
+| Export SketchUp « Léger » : vérification automatique OK, « mètres (étalonné) », ZIP téléchargé | 9 s |
+| Aucune erreur console | OK |
+
+Le ZIP téléchargé s'importe dans Blender 4.5 : 49 999 faces, UV, texture présente.
+Sur le projet HAUTE QUALITÉ : rotation + découpe + simplification à 100 000
+faces re-texturée (42 s), export SketchUp Léger (49 998 faces, 11 s) ; dans
+Blender, la texture re-projetée correspond exactement à la géométrie.
+
+Tests Python associés (`test_edit.py`, `test_server.py`) : validation des
+opérations, découpe, effacement par rectangle projeté, rotations sans
+déformation, nuage de points suivant les mêmes transformations, opération
+destructrice refusée sans être enregistrée, annulation, confirmation de
+réinitialisation, original jamais modifié, étalonnage appliqué aux exports DAE
+et STL (dimensions vérifiées), exports supprimés quand l'étalonnage change.
+
+**Bug trouvé et corrigé** : trimesh refuse les textures référencées par
+`../textures/…` et renvoyait silencieusement un modèle sans image ; tout
+traitement relisant `meshes/model.obj` (ré-exports, édition, SketchUp) perdait
+la texture. Le chargeur résout désormais `map_Kd` lui-même ; deux tests, qui
+échouent sur l'ancienne version, l'exigent.
 
 ## Test d'intégration (photos réelles)
 

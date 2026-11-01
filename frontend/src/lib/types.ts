@@ -31,7 +31,7 @@ export interface Estimate {
 export interface Job {
   id: string;
   project_id: string;
-  kind: "reconstruct" | "export" | "video";
+  kind: "reconstruct" | "export" | "video" | "edit" | "sketchup";
   params?: Record<string, string>;
   profile: string | null;
   formats: string[];
@@ -67,7 +67,26 @@ export interface Project {
   last_job_id: string | null;
 }
 
+export interface Calibration {
+  method: "manual" | "reference";
+  metres_per_unit: number;
+  p1: number[]; p2: number[];
+  distance: number;
+  unit: "mm" | "cm" | "m";
+  model_distance: number;
+}
+
+export type EditOp =
+  | { type: "crop_box"; min: number[]; max: number[] }
+  | { type: "delete_region"; matrix: number[]; polygon: number[][] }
+  | { type: "remove_components"; min_fraction: number }
+  | { type: "rotate"; axis: "x" | "y" | "z"; degrees: number }
+  | { type: "recenter" }
+  | { type: "simplify"; target_faces: number };
+
 export interface ProjectDetail extends Project {
+  calibration: Calibration | null;
+  edits: EditOp[];
   photos: Photo[];
   exports: ExportFile[];
   active_job: Job | null;

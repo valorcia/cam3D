@@ -1,4 +1,4 @@
-import type { Job, Project, ProjectDetail, SystemInfo, Whoami, Photo, ExportFile } from "./types";
+import type { Calibration, Job, Project, ProjectDetail, SystemInfo, Whoami, Photo, ExportFile } from "./types";
 
 /** Empty in production (UI served by the API itself); set in development. */
 export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/$/, "");
@@ -62,6 +62,14 @@ export const api = {
   requestExport: (id: string, formats: string[]) =>
     request<Job>(`/api/projects/${id}/exports`, json("POST", { formats })),
   exports: (id: string) => request<ExportFile[]>(`/api/projects/${id}/exports`),
+  sketchupExport: (id: string, level: "light" | "standard" | "detailed") =>
+    request<Job>(`/api/projects/${id}/exports`, json("POST", { sketchup_level: level })),
+  addEdit: (id: string, op: Record<string, unknown>) => request<Job>(`/api/projects/${id}/edits`, json("POST", { op })),
+  undoEdit: (id: string) => request<Job>(`/api/projects/${id}/edits/undo`, json("POST")),
+  resetEdits: (id: string) => request<Job>(`/api/projects/${id}/edits/reset?confirm=true`, json("POST")),
+  setCalibration: (id: string, p1: number[], p2: number[], distance: number, unit: string) =>
+    request<Calibration>(`/api/projects/${id}/calibration`, json("PUT", { p1, p2, distance, unit })),
+  clearCalibration: (id: string) => request(`/api/projects/${id}/calibration`, { method: "DELETE" }),
   job: (jid: string) => request<Job>(`/api/jobs/${jid}`),
   projectJobs: (id: string) => request<Job[]>(`/api/projects/${id}/jobs`),
   cancelJob: (jid: string) => request<Job>(`/api/jobs/${jid}/cancel`, json("POST")),

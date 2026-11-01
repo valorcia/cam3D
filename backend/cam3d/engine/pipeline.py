@@ -42,6 +42,7 @@ from .stages.prepare import prepare_images
 from .stages.sfm import SfmResult, run_sfm
 from .subprocess_utils import ToolError
 from .tools import ToolRegistry, discover_tools
+from .events import fmt_int
 
 PREVIEW_MAX_FACES = 250_000      # above this, the browser preview is a decimated, re-textured copy
 PREVIEW_TARGET_FACES = 200_000
@@ -326,13 +327,13 @@ class ReconstructionPipeline:
                                      texture_rel="../textures/")
                 n_pts = write_aligned_pointclouds(Path(dense.dense_ply), M, project / "reconstruction" / "dense_aligned.ply",
                                                   project / "previews" / "pointcloud.ply")
-                sub.log(f"Nuage de points aligné : {n_pts:,} points pour l'aperçu".replace(",", " "))
+                sub.log(f"Nuage de points aligné : {fmt_int(n_pts)} points pour l'aperçu")
                 preview_info = {"decimated": False, "faces": model.num_faces, "full_faces": model.num_faces,
                                 "pointcloud_points": n_pts}
                 if model.num_faces > PREVIEW_MAX_FACES:
                     export_glb(model, project / "previews", f"{model_name}_full")
                     try:
-                        sub.log(f"Aperçu allégé : décimation à {PREVIEW_TARGET_FACES:,} faces puis re-texturage".replace(",", " "))
+                        sub.log(f"Aperçu allégé : décimation à {fmt_int(PREVIEW_TARGET_FACES)} faces puis re-texturage")
                         pply = decimate_mesh(mesh, PREVIEW_TARGET_FACES, self.tools, sub, self.cancel, self.threads)  # type: ignore[arg-type]
                         ptex = run_texture(work, profile, self.tools, sub, mesh, self.cancel, self.threads,  # type: ignore[arg-type]
                                            mesh_override=pply, output_name="preview", allow_raw_fallback=False)
@@ -351,6 +352,12 @@ class ReconstructionPipeline:
                 else:
                     export_glb(model, project / "previews", model_name)
                 (project / "previews" / "preview.json").write_text(json.dumps(preview_info, indent=2), encoding="utf-8")
+                # keep an untouched copy for non-destructive editing; a new reconstruction
+                # also invalidates edits and the scale calibration (new geometry / scale)
+                from .edit_runner import save_originals
+                save_originals(project, model)
+                (work / "calibration.json").unlink(missing_ok=True)
+                sub.log("Copie originale du modèle conservée (les modifications ne la toucheront jamais)")
             finally:
                 lg.close()
             result.model_obj = str(project / "meshes" / f"{model_name}.obj")

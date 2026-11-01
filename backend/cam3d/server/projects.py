@@ -254,7 +254,13 @@ class ProjectStore:
         root = self.path(project_id)
         res_file = root / "pipeline_result.json"
         faces = None
-        if res_file.exists():
+        pv = root / "previews" / "preview.json"
+        if pv.exists():
+            try:
+                faces = json.loads(pv.read_text(encoding="utf-8")).get("full_faces")
+            except ValueError:
+                faces = None
+        if faces is None and res_file.exists():
             try:
                 faces = json.loads(res_file.read_text(encoding="utf-8")).get("num_faces")
             except Exception:

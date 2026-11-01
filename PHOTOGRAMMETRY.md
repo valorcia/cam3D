@@ -71,3 +71,31 @@ lorsqu'un historique local existera (phase 3).
   des heures sur de grands jeux ; l'UI devra l'annoncer.
 - Les objets uniformes, brillants ou transparents restent difficiles
   (limite de la photogrammétrie, pas de cam3D).
+
+## Édition non destructive, étalonnage
+
+- L'original reconstruit est copié dans `meshes/original/` (plus l'aperçu et les
+  nuages de points d'origine) et n'est **jamais** modifié. Les modifications
+  sont une liste d'opérations (`processed/edits.json`) rejouée sur l'original :
+  annuler = retirer la dernière, revenir à l'original = liste vide (confirmation).
+- Opérations : découpe par boîte, effacement d'une zone tracée à l'écran (à
+  travers toute la profondeur), suppression des parties isolées, rotation de
+  90°, recentrage, simplification. Elles sont exprimées géométriquement dans le
+  repère du modèle : la même liste s'applique au modèle complet, à l'aperçu et
+  aux nuages de points.
+- La liste n'est enregistrée qu'après succès : une opération qui viderait le
+  modèle échoue sans rien modifier.
+- **Simplification** : décimation OpenMVS puis **re-texturage depuis les
+  photos** (la géométrie est ramenée dans le repère de reconstruction en
+  composant la transformation canonique et les rotations d'édition). Résultat
+  mis en cache. Mesure : 580 573 → 100 000 faces en 42 s (profil HAUTE QUALITÉ),
+  rejoué depuis le cache en 5 s.
+- **Étalonnage** : deux points + distance connue (mm, cm, m) → mètres par
+  unité, stocké dans `processed/calibration.json` (méthode « manuelle »). Les
+  modifications rigides ne changent pas les distances, l'étalonnage reste
+  valable. Une nouvelle reconstruction l'efface (nouvelle échelle). Statuts
+  affichés : non étalonné, étalonné manuellement, étalonné avec une source de
+  référence (réservé aux futures sources : LiDAR, mire). Une distance non
+  étalonnée est toujours affichée « u (non étalonné) ».
+- Toute modification ou tout changement d'étalonnage supprime les exports
+  existants (fichiers dérivés, régénérables) pour éviter des fichiers périmés.
