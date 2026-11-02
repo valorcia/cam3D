@@ -49,23 +49,49 @@ await step("téléphone : clé du relais enregistrée (mauvaise clé refusée)",
   phoneErrors.length = 0; // the 403 of the deliberately wrong key above is expected
 });
 
-await step("téléphone : nouveau scan, 12 photos à la caméra, envoyées chiffrées", async () => {
+let N = 0; // frames kept by the continuous scan
+await step("téléphone : scan continu (images choisies automatiquement), envoyées chiffrées", async () => {
   await phone.goto(`${CAPTURE}/`);
   await phone.locator('[data-testid="new-scan"]').click();
   await phone.waitForURL(/\/scan\/\?id=/);
   scanId = new URL(phone.url()).searchParams.get("id");
   await phone.locator('[data-testid="start-camera"]').click();
-  await phone.locator('[data-testid="shutter"]').waitFor();
-  await phone.waitForTimeout(1200);
-  for (let i = 0; i < 12; i++) { await phone.locator('[data-testid="shutter"]').click(); await phone.waitForTimeout(1350); }
-  await waitCounter(phone, /^12 photos sur ce téléphone · 12 chiffrées en ligne$/);
-  await phone.screenshot({ path: path.join(SHOTS, "40-capture-distante.png"), fullPage: true });
+  await phone.locator('[data-testid="scan-toggle"]').waitFor();
+  expect(await phone.locator('[data-testid="mode-auto"]').getAttribute("aria-pressed") === "true", "le scan continu n'est pas le mode par défaut");
+  await phone.waitForTimeout(800);
+  await phone.locator('[data-testid="scan-toggle"]').click();
+  // the fake camera shows the 11 castle photos for 2 s each; a simulated compass turns 360° meanwhile
+  const t0 = Date.now();
+  const seen = new Set();
+  while (Date.now() - t0 < 26000) {
+    const heading = ((Date.now() - t0) / 22000) * 360 % 360;
+    await phone.evaluate((h) => window.dispatchEvent(Object.assign(new Event("deviceorientation"), { alpha: (360 - h) % 360, beta: 85, gamma: 0 })), heading);
+    const g = await phone.locator('[data-testid="auto-guidance"]').textContent().catch(() => null);
+    if (g) seen.add(g);
+    await phone.waitForTimeout(250);
+  }
+  await phone.screenshot({ path: path.join(SHOTS, "40-scan-continu.png") });
+  await phone.locator('[data-testid="scan-toggle"]').click();
+  // wait until the last frames being saved are counted (stable for 3 s)
+  let last = -1;
+  for (let stable = 0; stable < 3;) {
+    await phone.waitForTimeout(1000);
+    N = Number((await phone.locator('[data-testid="counter"]').innerText()).match(/^(\d+)/)[1]);
+    stable = N === last ? stable + 1 : 0;
+    last = N;
+  }
+  console.log(`   ${N} images retenues automatiquement ; consignes vues : ${[...seen].join(" | ")}`);
+  expect(N >= 10 && N <= 18, `images retenues : ${N}`);
+  expect([...seen].some((g) => /Déplacez-vous/.test(g)), "aucune consigne de déplacement affichée");
+  const ring = await phone.locator('[data-testid="coverage"]').innerText();
+  expect(/(\d+)° du tour/.test(ring) && Number(ring.match(/(\d+)°/)[1]) >= 270, `anneau : ${ring}`);
+  await waitCounter(phone, new RegExp(`^${N} photos sur ce téléphone · ${N} chiffrées en ligne$`), 90000);
 });
 
 await step("le relais ne contient que des données chiffrées", async () => {
   const dir = path.join(DEV_DIR, "scans", scanId);
   const files = fs.readdirSync(dir);
-  expect(files.length === 13 && files.includes("manifest.bin"), `fichiers: ${files.length}`);
+  expect(files.length === N + 1 && files.includes("manifest.bin"), `fichiers: ${files.length}`);
   for (const f of files) {
     const b = fs.readFileSync(path.join(dir, f));
     expect(b.subarray(0, 4).toString() === "C3D1", `${f}: en-tête`);
@@ -77,10 +103,11 @@ await step("le relais ne contient que des données chiffrées", async () => {
 await step("hors connexion : capture possible, application rouverte sans réseau", async () => {
   offline = true;
   await phoneCtx.setOffline(true);
+  await phone.locator('[data-testid="mode-manual"]').click();
   for (let i = 0; i < 2; i++) { await phone.locator('[data-testid="shutter"]').click(); await phone.waitForTimeout(1350); }
-  await waitCounter(phone, /^14 photos sur ce téléphone · 12 chiffrées en ligne$/);
+  await waitCounter(phone, new RegExp(`^${N + 2} photos sur ce téléphone · ${N} chiffrées en ligne$`));
   await phone.reload();                       // served by the service worker
-  await waitCounter(phone, /^14 photos sur ce téléphone · 12 chiffrées en ligne$/);
+  await waitCounter(phone, new RegExp(`^${N + 2} photos sur ce téléphone · ${N} chiffrées en ligne$`));
   await phone.getByText(/Hors connexion : 2 photo\(s\) seront envoyées/).waitFor();
   await phone.screenshot({ path: path.join(SHOTS, "41-hors-connexion.png"), fullPage: true });
 });
@@ -88,13 +115,13 @@ await step("hors connexion : capture possible, application rouverte sans réseau
 await step("retour du réseau : envoi automatique des photos en attente", async () => {
   await phoneCtx.setOffline(false);
   offline = false;
-  await waitCounter(phone, /^14 photos sur ce téléphone · 14 chiffrées en ligne$/, 90000);
+  await waitCounter(phone, new RegExp(`^${N + 2} photos sur ce téléphone · ${N + 2} chiffrées en ligne$`), 90000);
   await phone.getByText("Tout est envoyé et chiffré.").waitFor({ timeout: 60000 });
   code = (await phone.locator('[data-testid="transfer-code"]').inputValue()).trim();
   expect(code.startsWith("c3d1:"), "code absent");
 });
 
-await step("ordinateur : lien de transfert → cam3D local → projet avec 14 photos", async () => {
+await step("ordinateur : lien de transfert → cam3D local → projet avec toutes les photos", async () => {
   const pc = await browser.newContext({ viewport: { width: 1360, height: 900 } });
   const page = await pc.newPage();
   await page.goto(`${CAPTURE}/t/#${code}`);
@@ -107,7 +134,7 @@ await step("ordinateur : lien de transfert → cam3D local → projet avec 14 ph
   await page.locator('[data-testid="relay-import"]').click();
   await page.waitForURL(/\/project\/\?id=/);
   const pid = new URL(page.url()).searchParams.get("id");
-  await page.waitForFunction(() => /^14 photos$/.test(document.querySelector("h3")?.textContent ?? ""), null, { timeout: 120000 });
+  await page.waitForFunction((n) => document.querySelector("h3")?.textContent === `${n} photos`, N + 2, { timeout: 120000 });
   await page.screenshot({ path: path.join(SHOTS, "42-import-pc.png") });
   globalThis.pid = pid;
   await pc.close();
@@ -121,6 +148,8 @@ await step("reconstruction sur l'ordinateur des photos prises à distance", asyn
   expect(j.status === "succeeded", j.error);
   const sfm = j.events.find((e) => e.stage === "sfm" && e.status === "finished");
   console.log(`   ${sfm?.message}`);
+  const reg = Number(sfm.message.match(/^(\d+)\//)[1]);
+  expect(reg >= N, `caméras enregistrées : ${reg} pour ${N + 2} photos`);
 });
 
 await step("sans relais : ZIP exporté du téléphone importé dans un projet", async () => {
@@ -131,7 +160,7 @@ await step("sans relais : ZIP exporté du téléphone importé dans un projet", 
   const form = new FormData();
   form.append("files", new Blob([fs.readFileSync(f)], { type: "application/zip" }), "scan.zip");
   const res = await (await fetch(`${CAM3D}/api/projects/${pid}/photos`, { method: "POST", body: form })).json();
-  expect(res.added.length === 14, `ajoutées: ${res.added?.length} ${JSON.stringify(res.rejected)}`);
+  expect(res.added.length === N + 2, `ajoutées: ${res.added?.length} ${JSON.stringify(res.rejected)}`);
 });
 
 await step("retrait immédiat du relais depuis le téléphone", async () => {

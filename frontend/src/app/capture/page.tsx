@@ -3,7 +3,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { IconBack, IconImages, IconTrash } from "@/components/Icons";
+import { CoverageRing, requestOrientation, ScanHud, useAutoScan, type AutoMeta } from "@/components/AutoScan";
 import { ErrorBox, Spinner } from "@/components/ui";
+import { DENSITIES } from "@/lib/autoCapture";
 import { api, uploadPhotos, uploadVideo } from "@/lib/api";
 import { analyseBlob, type Quality } from "@/lib/quality";
 import { useApp } from "@/lib/store";
@@ -42,6 +44,10 @@ function Capture() {
   const [videoJob, setVideoJob] = useState<string | null>(null);
   const counter = useRef(0);
   const queue = useRef<Promise<void>>(Promise.resolve());
+  const [shotMode, setShotMode] = useState<"auto" | "manual">("auto");
+  const [scanning, setScanning] = useState(false);
+  const [density, setDensity] = useState<keyof typeof DENSITIES>("normal");
+  const [poses, setPoses] = useState<AutoMeta[]>([]);
 
   useEffect(() => { if (whoami && id) api.project(id).then((p) => setProjectName(p.name)).catch(() => undefined); }, [whoami, id]);
   useEffect(() => { const t = setInterval(() => setTip((x) => (x + 1) % TIPS.length), 5000); return () => clearInterval(t); }, []);
@@ -89,6 +95,26 @@ function Capture() {
       }
     });
   }, [id]);
+
+  const auto = useAutoScan(video, scanning && mode === "camera" && shotMode === "auto", density, async (blob, meta) => {
+    setPoses((p) => [...p, meta]);
+    const key = `${Date.now()}_${counter.current++}`;
+    const file = new File([blob], `scan_${stamp()}_${counter.current}.jpg`, { type: "image/jpeg" });
+    const shot: Shot = { key, file, preview: URL.createObjectURL(file), status: "pending" };
+    setShots((all) => [...all, shot]);
+    upload(shot); // frames are already selected for sharpness: no second analysis
+  });
+
+  async function toggleScan() {
+    if (!scanning) await requestOrientation();
+    setScanning(!scanning);
+  }
+
+  useEffect(() => {
+    let lock: any = null;
+    if (scanning) (navigator as any).wakeLock?.request("screen").then((l: any) => { lock = l; }).catch(() => undefined);
+    return () => { lock?.release?.(); };
+  }, [scanning]);
 
   async function addFile(file: File) {
     const key = `${Date.now()}_${counter.current++}`;
@@ -185,9 +211,27 @@ function Capture() {
           </div>
         )}
         {flash && <div className="pointer-events-none absolute inset-0 bg-white/70" />}
-        {mode === "camera" && (
+        {mode === "camera" && shotMode === "manual" && (
           <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
             <span className="rounded-full bg-black/55 px-3 py-1.5 text-xs text-text backdrop-blur" key={tip}>{TIPS[tip]}</span>
+          </div>
+        )}
+        {mode === "camera" && shotMode === "auto" && scanning && <ScanHud reason={auto.reason} pulse={auto.pulse} count={poses.length} />}
+        {mode === "camera" && shotMode === "auto" && <CoverageRing samples={poses} heading={auto.pose.heading} />}
+        {mode === "camera" && !scanning && (
+          <div className="absolute left-3 top-3 flex rounded-lg bg-black/55 p-0.5 text-xs backdrop-blur" role="group">
+            {(["auto", "manual"] as const).map((m) => (
+              <button key={m} onClick={() => setShotMode(m)} aria-pressed={shotMode === m} data-testid={`mode-${m}`}
+                className={`rounded-md px-2.5 py-1 ${shotMode === m ? "bg-white/20" : "text-muted"}`}>{m === "auto" ? "Scan continu" : "Photo"}</button>
+            ))}
+          </div>
+        )}
+        {mode === "camera" && shotMode === "auto" && !scanning && (
+          <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-2 rounded-xl bg-black/55 px-3 py-2 text-xs text-text backdrop-blur">
+            <span>Appuyez sur le bouton rouge puis tournez lentement autour de l’objet : les images sont prises automatiquement.</span>
+            <select className="rounded-md bg-white/10 px-2 py-1" value={density} onChange={(e) => setDensity(e.target.value as keyof typeof DENSITIES)} aria-label="Densité d’images">
+              {Object.entries(DENSITIES).map(([k, d]) => <option key={k} value={k} className="text-black">{d.label}</option>)}
+            </select>
           </div>
         )}
         {toast && <div className="absolute inset-x-4 top-14 rounded-xl bg-black/80 px-4 py-2.5 text-center text-sm text-warn backdrop-blur" role="status">{toast}</div>}
@@ -220,7 +264,12 @@ function Capture() {
 
       {/* shutter */}
       <div className="flex items-center justify-center pb-4 pt-1" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
-        {mode === "camera" ? (
+        {mode === "camera" && shotMode === "auto" ? (
+          <button onClick={toggleScan} data-testid="scan-toggle" aria-label={scanning ? "Arrêter le scan" : "Démarrer le scan"}
+            className="grid h-[74px] w-[74px] place-items-center rounded-full border-4 border-white/90 transition-transform active:scale-90">
+            {scanning ? <span className="h-7 w-7 rounded-md bg-danger" /> : <span className="h-[58px] w-[58px] rounded-full bg-danger" />}
+          </button>
+        ) : mode === "camera" ? (
           <button onClick={shoot} aria-label="Prendre une photo" data-testid="shutter"
             className="grid h-[74px] w-[74px] place-items-center rounded-full border-4 border-white/90 transition-transform active:scale-90">
             <span className="h-[58px] w-[58px] rounded-full bg-white" />

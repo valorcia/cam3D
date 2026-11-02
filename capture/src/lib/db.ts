@@ -22,6 +22,9 @@ export interface Photo {
   warnings?: string[];
   uploaded: boolean;     // encrypted copy present on the relay
   sha256?: string;
+  heading?: number | null; // compass heading when taken (continuous scan), for the coverage ring
+  tilt?: number | null;    // height band 0 high / 1 middle / 2 low
+  auto?: boolean;          // picked automatically by the continuous scan
 }
 
 const DB = "cam3d-capture";

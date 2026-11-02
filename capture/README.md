@@ -13,8 +13,16 @@ Téléphone (cam3D Capture, HTTPS)          Relais (Vercel Blob)                
 ```
 
 ## Ce que fait l'application
-- **Capture** : caméra du navigateur (HTTPS : aucun certificat à installer),
-  appareil photo natif, galerie ; contrôle de netteté et d'exposition.
+- **Scan continu (mode par défaut)** : on appuie une fois, on tourne autour de
+  l'objet ; le flux de la caméra est analysé ~8 fois par seconde et une image
+  pleine résolution est gardée automatiquement quand elle est nette (par
+  rapport aux images récentes), prise sans mouvement brusque, bien exposée et
+  assez différente de la précédente. Consignes en direct (« Ralentissez »,
+  « Déplacez-vous », « Image floue », « Trop sombre ») ; densité réglable
+  (Léger / Normal / Dense). Un anneau montre les directions déjà couvertes et
+  la hauteur (haut / milieu / bas), mesurées par la **boussole et
+  l'inclinaison du téléphone** : ce n'est pas une estimation 3D.
+- **Photo par photo** : déclencheur manuel, appareil photo natif, galerie.
 - **Hors connexion** : l'application s'ouvre sans réseau (service worker) ; les
   photos restent sur le téléphone et partent automatiquement au retour du réseau.
 - **Relais chiffré** : chaque scan a sa propre clé AES-256-GCM générée sur le
@@ -25,6 +33,15 @@ Téléphone (cam3D Capture, HTTPS)          Relais (Vercel Blob)                
 - **Sans relais** : partage natif des photos ou export ZIP, importables tels quels dans cam3D.
 - **Effacement** : les copies chiffrées sont supprimées chaque jour au-delà de
   7 jours (Vercel Cron), ou immédiatement depuis le téléphone.
+
+## Différence avec Polycam
+
+Le principe du mode photo de Polycam (filmer, images choisies
+automatiquement) est reproduit. Le modèle 3D construit **en direct**, point par
+point, de Polycam repose sur le LiDAR et ARKit de l'iPhone Pro, inaccessibles à
+une page web (Safari n'expose ni la profondeur ni ARKit) : il demande une
+application iOS native (feuille de route). La reconstruction se fait ici sur
+l'ordinateur, après la capture.
 
 ## Sécurité
 | Menace | Protection |

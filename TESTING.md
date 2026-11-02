@@ -169,6 +169,30 @@ Les tests ont révélé et fait corriger : une tâche vidéo publiée « réussi
 avant l'import de ses images, une image floue conservée au détriment de la
 version nette de la même vue, et des erreurs 401 parasites avant appairage.
 
+## Scan continu (mode par défaut de la prise de vue)
+
+Sélection automatique d'images testée en unitaire (`autoCapture.test.ts`, dans
+`capture/` et `frontend/`) : une image par nouvelle vue, rien quand le
+téléphone est immobile, rejet des mouvements trop rapides, du flou, des images
+sombres ou surexposées, changement d'exposition non confondu avec un
+déplacement, anneau de couverture (tour complet, sauts > 45°, bandes de hauteur).
+
+Validation du 2 novembre 2026 (`scripts/validate_all.sh`, tous les blocs verts
+après correction d'un test) : caméra simulée montrant les 11 photos du château
+2 s chacune, boussole simulée faisant un tour complet.
+
+| Scénario | Images retenues | Reconstruction |
+|---|---|---|
+| cam3D Capture (n'importe où, relais chiffré) | 14, consignes « Déplacez-vous » / « Ralentissez » affichées, anneau à 360° | 16/16 caméras (avec 2 photos manuelles hors connexion) |
+| Capture locale (même Wi-Fi, HTTPS) | 13 | 13/13 caméras, 0,33 px |
+
+Bug trouvé : sur Chrome, seul l'événement de boussole « absolu » était écouté ;
+un téléphone ne fournissant que l'orientation relative n'aurait jamais affiché
+l'anneau. Les deux sont maintenant écoutés.
+
+Non vérifiable ici : le comportement avec un vrai téléphone en mouvement
+(réglage des seuils de sélection, boussole réelle, résolution du flux vidéo).
+
 ## Capture à distance (`capture/tests/e2e_remote.mjs`)
 
 Application cam3D Capture en production locale (`next start`, relais local à la
@@ -178,7 +202,7 @@ avec caméra simulée. 1er novembre 2026, **10/10 scénarios réussis** :
 | Scénario | Résultat |
 |---|---|
 | Clé du relais : mauvaise clé refusée, bonne clé acceptée | OK |
-| 12 photos prises à la caméra, envoyées chiffrées automatiquement | 19 s |
+| Scan continu à la caméra, images envoyées chiffrées automatiquement | 14 images, 32 s |
 | Le relais ne contient que des objets `C3D1` chiffrés, ni JPEG ni nom de fichier en clair | OK |
 | Hors connexion : 2 photos de plus, application rechargée sans réseau (service worker), photos toujours là | OK |
 | Retour du réseau : envoi automatique des 2 photos en attente | OK |

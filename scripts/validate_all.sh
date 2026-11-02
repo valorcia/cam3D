@@ -8,6 +8,7 @@
 # 3. starts a server on a temporary data folder and runs the browser scenarios:
 #    tests/e2e.mjs (import, real reconstruction, viewer, exports, phone pairing)
 #    tests/e2e_edit.mjs (measure, calibrate, crop, erase, undo, SketchUp export)
+#    capture/tests/e2e_remote.mjs (cam3D Capture + local relay) if a fake-camera .y4m is given
 #    tests/e2e_capture.mjs only if a video and a fake-camera .y4m are given AND
 #    CAM3D_TRUST_TEST_CA=1: it adds the temporary local CA to the current user's
 #    NSS store (~/.pki/nssdb) for the duration of the run, then removes it.
@@ -30,13 +31,21 @@ step "Test d'intégration sur photos réelles"
 (cd "${ROOT}/backend" && CAM3D_TEST_DATASET="${PHOTOS}" "${PY}" -m pytest -q -p no:dash -m slow tests/test_pipeline_integration.py) || fail=1
 step "Interface : typage + tests unitaires"
 (cd "${ROOT}/frontend" && npx tsc --noEmit && npx vitest run) || fail=1
+step "cam3D Capture : typage + tests unitaires + build"
+(cd "${ROOT}/capture" && npm ci --no-audit --no-fund >/dev/null && npx tsc --noEmit && npx vitest run && NEXT_TELEMETRY_DISABLED=1 npx next build >/dev/null) || fail=1
 
 step "Serveur temporaire (${DATA})"
-CAM3D_DATA_DIR="${DATA}" "${PY}" -m cam3d.cli serve --host 0.0.0.0 --port "${PORT}" > "${DATA}/server.log" 2>&1 &
+RELAY_KEY="validation-$(date +%s)-relay-key"
+mkdir -p "${DATA}/relay"
+(cd "${ROOT}/capture" && RELAY_STORAGE=local RELAY_ACCESS_KEY="${RELAY_KEY}" RELAY_DEV_DIR="${DATA}/relay" \
+  exec npx next start -p 3100 > "${DATA}/capture.log" 2>&1) &
+CAPTURE=$!
+CAM3D_RELAY_ALLOW=http://localhost:3100 CAM3D_DATA_DIR="${DATA}" "${PY}" -m cam3d.cli serve --host 0.0.0.0 --port "${PORT}" > "${DATA}/server.log" 2>&1 &
 SERVER=$!
 CA_ADDED=0
 cleanup() {
   kill "${SERVER}" 2>/dev/null || true
+  pkill -P "${CAPTURE}" 2>/dev/null || true; kill "${CAPTURE}" 2>/dev/null || true
   if [ "${CA_ADDED}" = 1 ]; then certutil -D -d "sql:${HOME}/.pki/nssdb" -n "cam3D validation CA" || true; fi
 }
 trap cleanup EXIT
@@ -60,6 +69,11 @@ if [ -n "${VIDEO}" ] && [ -n "${Y4M}" ] && [ "${CAM3D_TRUST_TEST_CA:-0}" = 1 ] &
     CAM3D_VIDEO="${VIDEO}" CAM3D_PHOTOS="${PHOTOS}" CAM3D_SHOTS="${SHOTS}" node tests/e2e_capture.mjs) || fail=1
 else
   echo; echo "(capture mobile non rejouée : fournir vidéo + .y4m et CAM3D_TRUST_TEST_CA=1)"
+fi
+if [ -n "${Y4M}" ]; then
+  step "Scénario navigateur : capture à distance (scan continu, hors connexion, relais chiffré)"
+  (cd "${ROOT}/capture" && CAPTURE_URL=http://localhost:3100 CAM3D_URL="http://127.0.0.1:${PORT}" RELAY_ACCESS_KEY="${RELAY_KEY}" \
+    RELAY_DEV_DIR="${DATA}/relay" CAM3D_FAKE_CAMERA="${Y4M}" CAM3D_SHOTS="${SHOTS}" node tests/e2e_remote.mjs) || fail=1
 fi
 echo
 [ "${fail}" = 0 ] && echo "VALIDATION : TOUT A RÉUSSI" || echo "VALIDATION : ÉCHECS (voir ci-dessus)"

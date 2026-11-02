@@ -36,6 +36,7 @@
   sur Windows 11 et macOS ; installateurs.
 
 ## Capture à distance ✅ (livrée, testée avec un relais local)
+- Scan continu (images choisies automatiquement, guidage, anneau boussole) dans cam3D Capture et dans la capture locale.
 - Reste : déploiement Vercel (Blob store, variables), essai sur téléphones réels.
 
 ## Prochaines étapes prioritaires
@@ -45,5 +46,5 @@
 - Arbre de vocabulaire COLMAP pour les jeux non ordonnés de plus de 150 photos.
 
 ## Plus tard
-- iOS/Android natifs, LiDAR, segmentation IA de l'objet, amélioration IA des
+- iOS/Android natifs, LiDAR avec maillage en direct (ARKit / ARCore Depth), segmentation IA de l'objet, amélioration IA des
   textures, plans 2D, surfaces/volumes, DXF, STEP sur géométrie adaptée.

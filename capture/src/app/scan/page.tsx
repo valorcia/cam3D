@@ -3,7 +3,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { zipSync } from "fflate";
+import { CoverageRing, requestOrientation, ScanHud, useAutoScan } from "@/components/AutoScan";
 import { ErrorBox, Spinner } from "@/components/ui";
+import { DENSITIES } from "@/lib/autoCapture";
 import { randomHex, sha256Hex } from "@/lib/crypto";
 import { db, settings, type Photo, type Scan } from "@/lib/db";
 import { analyseBlob } from "@/lib/quality";
@@ -34,6 +36,10 @@ function ScanView() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const counter = useRef(0);
+  const [mode, setMode] = useState<"auto" | "manual">("auto");
+  const [scanning, setScanning] = useState(false);
+  const [density, setDensity] = useState<keyof typeof DENSITIES>("normal");
+  const [sessionCount, setSessionCount] = useState(0);
 
   const reload = useCallback(async () => {
     const s = await db.scan(id);
@@ -47,6 +53,12 @@ function ScanView() {
       return next;
     });
   }, [id]);
+
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reloadSoon = () => {
+    if (reloadTimer.current) return;
+    reloadTimer.current = setTimeout(() => { reloadTimer.current = null; reload(); if (navigator.onLine) sync(); }, 1200);
+  };
 
   const sync = useCallback(async () => {
     setSyncError(null);
@@ -62,6 +74,12 @@ function ScanView() {
   useEffect(() => { if (online) sync(); }, [online, sync]);
   useEffect(() => { const t = setInterval(() => { if (navigator.onLine) sync(); }, 20000); return () => clearInterval(t); }, [sync]);
   useEffect(() => () => { stream.current?.getTracks().forEach((t) => t.stop()); }, []);
+  useEffect(() => {
+    // keep the screen awake while scanning
+    let lock: any = null;
+    if (scanning) (navigator as any).wakeLock?.request("screen").then((l: any) => { lock = l; }).catch(() => undefined);
+    return () => { lock?.release?.(); };
+  }, [scanning]);
 
   async function startCamera() {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
@@ -79,8 +97,15 @@ function ScanView() {
     }
   }
 
-  async function addFile(file: Blob, name: string) {
-    const p: Photo = { id: randomHex(16), scanId: id, name, type: file.type || "image/jpeg", size: file.size, created: Date.now(), blob: file, uploaded: false };
+  async function addFile(file: Blob, name: string, extra: Partial<Photo> = {}) {
+    const p: Photo = { id: randomHex(16), scanId: id, name, type: file.type || "image/jpeg", size: file.size, created: Date.now(), blob: file, uploaded: false, ...extra };
+    if (extra.auto) {  // continuous scan: frames are already selected for sharpness, keep the loop light
+      p.sha256 = await sha256Hex(new Uint8Array(await file.arrayBuffer()));
+      await db.putPhoto(p);
+      setSessionCount((n) => n + 1);
+      reloadSoon();
+      return;
+    }
     try {
       const q = await analyseBlob(file);
       Object.assign(p, { sharpness: Math.round(q.sharpness), brightness: Math.round(q.brightness), warnings: q.warnings });
@@ -90,6 +115,15 @@ function ScanView() {
     await db.putPhoto(p);
     await reload();
     if (navigator.onLine) sync();
+  }
+
+  const auto = useAutoScan(video, scanning && camera === "on" && mode === "auto", density,
+    (blob, meta) => addFile(blob, stamp(++counter.current), { auto: true, heading: meta.heading, tilt: meta.tilt }));
+
+  async function toggleScan() {
+    if (!scanning) { await requestOrientation(); setSessionCount(0); }
+    setScanning(!scanning);
+    if (scanning) { reload(); if (navigator.onLine) sync(); }
   }
 
   async function shoot() {
@@ -168,9 +202,25 @@ function ScanView() {
               )}
             </div>
           )}
-          {camera === "on" && <span className="pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit rounded-full bg-black/55 px-3 py-1.5 text-xs backdrop-blur">{TIPS[tip]}</span>}
+          {camera === "on" && mode === "manual" && <span className="pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit rounded-full bg-black/55 px-3 py-1.5 text-xs backdrop-blur">{TIPS[tip]}</span>}
+          {camera === "on" && mode === "auto" && scanning && <ScanHud reason={auto.reason} pulse={auto.pulse} count={sessionCount} />}
+          {camera === "on" && mode === "auto" && <CoverageRing samples={photos.map((p) => ({ heading: p.heading ?? null, tilt: p.tilt ?? null }))} heading={auto.pose.heading} />}
+          {camera === "on" && !scanning && (
+            <div className="absolute left-3 top-3 flex rounded-lg bg-black/55 p-0.5 text-xs backdrop-blur" role="group">
+              {(["auto", "manual"] as const).map((m) => (
+                <button key={m} disabled={scanning} onClick={() => setMode(m)} aria-pressed={mode === m} data-testid={`mode-${m}`}
+                  className={`rounded-md px-2.5 py-1 ${mode === m ? "bg-white/20" : "text-muted"}`}>{m === "auto" ? "Scan continu" : "Photo"}</button>
+              ))}
+            </div>
+          )}
           {toast && <div className="absolute inset-x-3 bottom-24 rounded-xl bg-black/80 px-3 py-2 text-center text-sm text-warn" role="status">{toast}</div>}
-          {camera === "on" && (
+          {camera === "on" && mode === "auto" && (
+            <button onClick={toggleScan} data-testid="scan-toggle" aria-label={scanning ? "Arrêter le scan" : "Démarrer le scan"}
+              className="absolute bottom-4 left-1/2 grid h-[70px] w-[70px] -translate-x-1/2 place-items-center rounded-full border-4 border-white/90 active:scale-90">
+              {scanning ? <span className="h-7 w-7 rounded-md bg-danger" /> : <span className="h-[54px] w-[54px] rounded-full bg-danger" />}
+            </button>
+          )}
+          {camera === "on" && mode === "manual" && (
             <button onClick={shoot} aria-label="Prendre une photo" data-testid="shutter"
               className="absolute bottom-4 left-1/2 grid h-[70px] w-[70px] -translate-x-1/2 place-items-center rounded-full border-4 border-white/90 active:scale-90">
               <span className="h-[54px] w-[54px] rounded-full bg-white" />
@@ -178,6 +228,14 @@ function ScanView() {
           )}
         </div>
       </div>
+      {camera === "on" && mode === "auto" && (
+        <div className="flex items-center justify-between gap-2 text-xs text-muted">
+          <span>{scanning ? "Tournez lentement autour de l’objet, à 2 ou 3 hauteurs." : "Appuyez sur le bouton rouge puis tournez autour de l’objet : les images sont prises automatiquement."}</span>
+          <select className="input w-auto py-1.5 text-xs" value={density} disabled={scanning} onChange={(e) => setDensity(e.target.value as keyof typeof DENSITIES)} aria-label="Densité d’images">
+            {Object.entries(DENSITIES).map(([k, d]) => <option key={k} value={k}>{d.label}</option>)}
+          </select>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <label className="btn-ghost">Appareil photo
           <input type="file" accept="image/*" capture="environment" hidden onChange={async (e) => { for (const f of Array.from(e.target.files ?? [])) await addFile(f, f.name || stamp(++counter.current)); e.target.value = ""; }} />

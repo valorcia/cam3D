@@ -74,29 +74,40 @@ await step("téléphone : appairage approuvé sur l'ordinateur puis ouverture de
   expect(req, "aucune demande en attente");
   await api("POST", `/api/pair/requests/${req.id}/approve`);
   await phone.waitForURL(/\/capture\/\?id=/, { timeout: 15000 });
-  await phone.locator('[data-testid="shutter"]').waitFor({ timeout: 15000 });
+  await phone.locator('[data-testid="scan-toggle"]').waitFor({ timeout: 15000 }); // continuous scan is the default mode
 });
 
-await step("capture dans le navigateur : 16 photos, transfert automatique vers l'ordinateur", async () => {
+let N = 0;
+await step("scan continu dans le navigateur : images choisies automatiquement et envoyées à l'ordinateur", async () => {
   await phone.waitForTimeout(1500);
   await phone.screenshot({ path: path.join(SHOTS, "21-telephone-viseur.png") });
-  for (let i = 0; i < 16; i++) {
-    await phone.locator('[data-testid="shutter"]').click();
-    await phone.waitForTimeout(1350); // the fake camera shows each castle photo for 2 s
-  }
-  await phone.waitForFunction(() => /16 photos · 16 envoyées/.test(document.querySelector('[data-testid="capture-counter"]')?.textContent ?? ""), null, { timeout: 120000 });
+  await phone.locator('[data-testid="scan-toggle"]').click();
+  await phone.waitForTimeout(25000); // the fake camera shows the 11 castle photos for 2 s each
+  await phone.locator('[data-testid="scan-toggle"]').click();
+  await phone.waitForTimeout(2000);
+  N = Number((await phone.locator('[data-testid="capture-counter"]').innerText()).match(/^(\d+) photo/)[1]);
+  expect(N >= 10 && N <= 18, `images retenues : ${N}`);
+  await phone.waitForFunction((n) => (document.querySelector('[data-testid="capture-counter"]')?.textContent ?? "").includes(`${n} photos · ${n} envoyées`), N, { timeout: 120000 });
   await phone.screenshot({ path: path.join(SHOTS, "22-telephone-capture.png") });
   const p = await api("GET", `/api/projects/${pidCapture}`);
-  expect(p.photo_count === 16, `photos côté ordinateur: ${p.photo_count}`);
+  expect(p.photo_count === N, `photos côté ordinateur: ${p.photo_count}`);
   expect(p.photos[0].width >= 1280, `résolution ${p.photos[0].width}`);
+  console.log(`   ${N} images retenues automatiquement`);
+});
+
+await step("mode photo par photo toujours disponible", async () => {
+  await phone.locator('[data-testid="mode-manual"]').click();
+  await phone.locator('[data-testid="shutter"]').click();
+  await phone.waitForFunction((n) => (document.querySelector('[data-testid="capture-counter"]')?.textContent ?? "").includes(`${n + 1} photos · ${n + 1} envoyées`), N, { timeout: 60000 });
+  N += 1;
 });
 
 await step("suppression d'une photo depuis la bande de capture", async () => {
   await phone.locator('[data-testid="capture-strip"] button[aria-label="Supprimer cette photo"]').first().click();
-  await phone.waitForFunction(() => /15 photos/.test(document.querySelector('[data-testid="capture-counter"]')?.textContent ?? ""));
+  await phone.waitForFunction((k) => (document.querySelector('[data-testid="capture-counter"]')?.textContent ?? "").startsWith(`${k} photos`), N - 1);
   let n = 0;
-  for (let i = 0; i < 10; i++) { n = (await api("GET", `/api/projects/${pidCapture}`)).photo_count; if (n === 15) break; await phone.waitForTimeout(300); }
-  expect(n === 15, `photos après suppression: ${n}`);
+  for (let i = 0; i < 10; i++) { n = (await api("GET", `/api/projects/${pidCapture}`)).photo_count; if (n === N - 1) break; await phone.waitForTimeout(300); }
+  expect(n === N - 1, `photos après suppression: ${n}`);
 });
 
 await step("reconstruction des photos prises dans le navigateur", async () => {
@@ -126,7 +137,7 @@ await step("repli HTTP sans certificat : appareil photo natif / galerie", async 
   await p2.screenshot({ path: path.join(SHOTS, "23-telephone-repli-http.png") });
   const photos = fs.readdirSync(process.env.CAM3D_PHOTOS).filter((f) => /\.jpe?g$/i.test(f)).slice(0, 2).map((f) => path.join(process.env.CAM3D_PHOTOS, f));
   await p2.locator('[data-testid="gallery-input"]').setInputFiles(photos);
-  await p2.waitForFunction(() => /17 photos|2 photos · 2 envoyées/.test(document.querySelector('[data-testid="capture-counter"]')?.textContent ?? ""), null, { timeout: 60000 });
+  await p2.waitForFunction(() => /2 photos · 2 envoyées/.test(document.querySelector('[data-testid="capture-counter"]')?.textContent ?? ""), null, { timeout: 60000 });
   await ctx.close();
 });
 
