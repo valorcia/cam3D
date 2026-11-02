@@ -81,21 +81,60 @@ function ScanView() {
     return () => { lock?.release?.(); };
   }, [scanning]);
 
-  async function startCamera() {
+  // Resolutions tried in order: some phones return a black stream for very high requests.
+  const CAMERA_TRIES = [
+    { width: { ideal: 4032 }, height: { ideal: 3024 } },
+    { width: { ideal: 1920 }, height: { ideal: 1440 } },
+    {},
+  ];
+  const attempt = useRef(0);
+  const [videoInfo, setVideoInfo] = useState("");
+  const [camSession, setCamSession] = useState(0); // new value at every (re)start, so the watchdog always re-arms
+
+  async function startCamera(tryIndex = 0) {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       setCamera("unavailable"); setCamMsg("Caméra du navigateur indisponible : utilisez l’appareil photo du téléphone ci-dessous."); return;
     }
+    stream.current?.getTracks().forEach((t) => t.stop());
+    attempt.current = tryIndex;
+    setVideoInfo("");
     setCamera("starting");
+    setCamMsg("");
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 4032 }, height: { ideal: 3024 } } });
+      const s = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, ...CAMERA_TRIES[tryIndex] } });
       stream.current = s;
-      setCamera("on");
-      requestAnimationFrame(() => { if (video.current) { video.current.srcObject = s; video.current.play().catch(() => undefined); } });
+      setCamera("on"); // the stream is attached to <video> by the effect below, once it is mounted
+      setCamSession((n) => n + 1);
     } catch (e: any) {
+      if (e?.name === "OverconstrainedError" && tryIndex + 1 < CAMERA_TRIES.length) return startCamera(tryIndex + 1);
       setCamera("unavailable");
-      setCamMsg(e?.name === "NotAllowedError" ? "Accès à la caméra refusé : autorisez-le dans les réglages du navigateur." : "Caméra indisponible.");
+      setCamMsg(e?.name === "NotAllowedError" ? "Accès à la caméra refusé : autorisez-le dans les réglages du navigateur (Safari : aA › Réglages du site web › Caméra)."
+        : e?.name === "NotReadableError" ? "La caméra est utilisée par une autre application : fermez-la puis réessayez." : "Caméra indisponible.");
     }
   }
+
+  // Attach the stream when the <video> element exists (it is only rendered once camera === "on"),
+  // then make sure frames really arrive: a black preview is retried at a lower resolution.
+  useEffect(() => {
+    if (camera !== "on") return;
+    const v = video.current, s = stream.current;
+    if (!v || !s) return;
+    if (v.srcObject !== s) v.srcObject = s;
+    v.play().catch(() => undefined);
+    const ok = () => { if (v.videoWidth) setVideoInfo(`${v.videoWidth}×${v.videoHeight}`); };
+    v.addEventListener("loadedmetadata", ok);
+    v.addEventListener("playing", ok);
+    ok(); // metadata may already be there
+    const watchdog = setTimeout(() => {
+      if (v.videoWidth > 0 && v.readyState >= 2) { ok(); return; }
+      if (attempt.current + 1 < CAMERA_TRIES.length) { startCamera(attempt.current + 1); return; }
+      s.getTracks().forEach((t) => t.stop());
+      setCamera("unavailable");
+      setCamMsg("La caméra ne renvoie pas d’image dans ce navigateur. Utilisez « Appareil photo » ci-dessous, ou rouvrez l’application depuis Safari / Chrome (pas depuis une application de messagerie).");
+    }, 4000);
+    return () => { clearTimeout(watchdog); v.removeEventListener("loadedmetadata", ok); v.removeEventListener("playing", ok); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera, camSession]);
 
   async function addFile(file: Blob, name: string, extra: Partial<Photo> = {}) {
     const p: Photo = { id: randomHex(16), scanId: id, name, type: file.type || "image/jpeg", size: file.size, created: Date.now(), blob: file, uploaded: false, ...extra };
@@ -192,12 +231,15 @@ function ScanView() {
       {/* viewfinder */}
       <div className="relative overflow-hidden rounded-2xl border border-line bg-black">
         <div className="relative aspect-[3/4] w-full">
+          {camera === "on" && !videoInfo && <div className="absolute inset-0 grid place-items-center"><Spinner className="h-6 w-6" /></div>}
+          {camera === "on" && videoInfo && <span className="pointer-events-none absolute bottom-2 right-3 text-[10px] text-white/60" data-testid="video-info">{videoInfo}</span>}
           {camera === "on" ? <video ref={video} playsInline muted autoPlay className="h-full w-full object-cover" /> : (
             <div className="absolute inset-0 grid place-items-center p-6 text-center">
               {camera === "starting" ? <Spinner className="h-6 w-6" /> : (
                 <div className="space-y-3">
                   {camMsg && <p className="text-sm text-muted">{camMsg}</p>}
-                  {camera === "off" && <button className="btn-primary" onClick={startCamera} data-testid="start-camera">Ouvrir la caméra</button>}
+                  {camera === "off" && <button className="btn-primary" onClick={() => startCamera(0)} data-testid="start-camera">Ouvrir la caméra</button>}
+                  {camera === "unavailable" && camMsg && <button className="btn-ghost" onClick={() => startCamera(0)}>Réessayer</button>}
                 </div>
               )}
             </div>

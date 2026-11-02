@@ -170,6 +170,23 @@ await step("retrait immédiat du relais depuis le téléphone", async () => {
   expect(!fs.existsSync(path.join(DEV_DIR, "scans", scanId)), "le scan est toujours sur le relais");
 });
 
+await step("caméra qui ne renvoie aucune image : nouvel essai puis message, jamais d'écran noir muet", async () => {
+  const ctx = await browser.newContext({ ...devices["iPhone 13"] });
+  // simulate a browser that grants the camera but never delivers a frame
+  await ctx.addInitScript(() => { navigator.mediaDevices.getUserMedia = async () => new MediaStream(); });
+  const p = await ctx.newPage();
+  await p.goto(`${CAPTURE}/`);
+  await p.locator('[data-testid="new-scan"]').click();
+  await p.waitForURL(/\/scan\//);
+  const t = Date.now();
+  await p.locator('[data-testid="start-camera"]').click();
+  await p.getByText(/La caméra ne renvoie pas d’image/).waitFor({ timeout: 20000 });
+  await p.getByRole("button", { name: "Réessayer" }).waitFor();
+  console.log(`   message affiché après ${((Date.now() - t) / 1000).toFixed(0)} s (3 essais de résolution)`);
+  await p.screenshot({ path: path.join(SHOTS, "43-camera-sans-image.png") });
+  await ctx.close();
+});
+
 await step("aucune erreur console sur le téléphone (hors période sans réseau)", async () => {
   expect(phoneErrors.length === 0, phoneErrors.slice(0, 3).join(" | "));
 });

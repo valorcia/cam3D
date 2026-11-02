@@ -193,6 +193,19 @@ l'anneau. Les deux sont maintenant écoutés.
 Non vérifiable ici : le comportement avec un vrai téléphone en mouvement
 (réglage des seuils de sélection, boussole réelle, résolution du flux vidéo).
 
+### Écran noir de la caméra (signalé le 2 novembre 2026 sur l'application en ligne)
+
+Non reproduit dans Chromium (iPhone 13 émulé, processeur ralenti ×6, ancienne
+et nouvelle version). Correctifs défensifs :
+- le flux est branché sur l'élément vidéo une fois celui-ci rendu (et non
+  dans une frame d'animation qui pouvait le précéder) ;
+- garde-fou : sans image au bout de 4 s, nouvel essai en 1920×1440 puis avec
+  les réglages par défaut ; ensuite message explicite, bouton « Réessayer » et
+  appareil photo natif ; la résolution réelle s'affiche dans le viseur.
+Le test « caméra qui ne renvoie aucune image » a révélé que le garde-fou ne
+se réarmait pas quand la caméra redémarrait vite (états regroupés par React) :
+corrigé, message affiché après 13 s. À confirmer sur l'appareil concerné.
+
 ## Capture à distance (`capture/tests/e2e_remote.mjs`)
 
 Application cam3D Capture en production locale (`next start`, relais local à la
