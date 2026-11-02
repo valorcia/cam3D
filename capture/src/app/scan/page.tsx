@@ -4,6 +4,8 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { zipSync } from "fflate";
 import { CoverageRing, requestOrientation, ScanHud, useAutoScan } from "@/components/AutoScan";
+import { ScanGuide } from "@/components/ScanGuide";
+import { CoverageMap, fieldOfView, pitchFromBand } from "@/lib/scanGuide";
 import { ErrorBox, Spinner } from "@/components/ui";
 import { DENSITIES } from "@/lib/autoCapture";
 import { randomHex, sha256Hex } from "@/lib/crypto";
@@ -40,6 +42,15 @@ function ScanView() {
   const [scanning, setScanning] = useState(false);
   const [density, setDensity] = useState<keyof typeof DENSITIES>("normal");
   const [sessionCount, setSessionCount] = useState(0);
+  const [guide, setGuide] = useState(true);
+  const covMap = useRef(new CoverageMap());
+  const lastKept = useRef(-Infinity);
+  useEffect(() => { try { setGuide(localStorage.getItem("cam3d.guide") !== "off"); } catch { /* private mode */ } }, []);
+  const toggleGuide = () => setGuide((g) => { try { localStorage.setItem("cam3d.guide", g ? "off" : "on"); } catch { /* private mode */ } return !g; });
+  const currentFov = () => {
+    const v = video.current;
+    return v?.videoWidth ? fieldOfView(v.videoWidth, v.videoHeight) : fieldOfView(3, 4);
+  };
 
   const reload = useCallback(async () => {
     const s = await db.scan(id);
@@ -162,6 +173,8 @@ function ScanView() {
   async function addFile(file: Blob, name: string, extra: Partial<Photo> = {}) {
     const p: Photo = { id: randomHex(16), scanId: id, name, type: file.type || "image/jpeg", size: file.size, created: Date.now(), blob: file, uploaded: false, ...extra };
     if (extra.auto) {  // continuous scan: frames are already selected for sharpness, keep the loop light
+      lastKept.current = performance.now();
+      if (extra.heading != null) { const f = currentFov(); covMap.current.mark(extra.heading, extra.pitch ?? pitchFromBand(extra.tilt) ?? 0, f.h, f.v); }
       p.sha256 = await sha256Hex(new Uint8Array(await file.arrayBuffer()));
       await db.putPhoto(p);
       setSessionCount((n) => n + 1);
@@ -180,7 +193,15 @@ function ScanView() {
   }
 
   const auto = useAutoScan(video, scanning && camera === "on" && mode === "auto", density,
-    (blob, meta) => addFile(blob, stamp(++counter.current), { auto: true, heading: meta.heading, tilt: meta.tilt }));
+    (blob, meta) => addFile(blob, stamp(++counter.current), { auto: true, heading: meta.heading, tilt: meta.tilt, pitch: meta.pitch ?? null }));
+
+  // coverage of the on-screen guide, rebuilt from the photos of this scan (deleted photos uncover their area)
+  useEffect(() => {
+    const m = new CoverageMap(), f = currentFov();
+    for (const p of photos) if (p.heading != null) m.mark(p.heading, p.pitch ?? pitchFromBand(p.tilt) ?? 0, f.h, f.v);
+    covMap.current = m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photos, videoInfo]);
 
   async function toggleScan() {
     if (!scanning) { await requestOrientation(); setSessionCount(0); }
@@ -252,8 +273,8 @@ function ScanView() {
         onBlur={async () => { if (scan) { await db.putScan({ ...scan, manifestCount: -1 }); reload(); if (navigator.onLine) sync(); } }} />
 
       {/* viewfinder */}
-      <div className="relative overflow-hidden rounded-2xl border border-line bg-black">
-        <div className="relative aspect-[3/4] w-full">
+      <div className={scanning && camera === "on" ? "fixed inset-0 z-50 !m-0 bg-black pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]" : "relative overflow-hidden rounded-2xl border border-line bg-black"} data-testid="viewfinder">
+        <div className={scanning && camera === "on" ? "relative h-full w-full overflow-hidden" : "relative aspect-[3/4] w-full"}>
           {camera === "on" && !videoInfo && <div className="absolute inset-0 grid place-items-center"><Spinner className="h-6 w-6" /></div>}
           {camera === "on" && videoInfo && <span className="pointer-events-none absolute bottom-2 right-3 text-[10px] text-white/60" data-testid="video-info">{videoInfo}</span>}
           {camera === "on" ? <video ref={video} playsInline muted autoPlay className="h-full w-full object-cover" /> : (
@@ -266,6 +287,12 @@ function ScanView() {
                 </div>
               )}
             </div>
+          )}
+          {camera === "on" && mode === "auto" && guide && <ScanGuide video={video} pose={auto.poseRef} map={covMap} lastKept={lastKept} scanning={scanning} />}
+          {camera === "on" && mode === "auto" && (
+            <button onClick={toggleGuide} aria-pressed={guide} data-testid="guide-toggle"
+              className="absolute right-3 top-3 flex items-center gap-1.5 rounded-lg bg-black/55 px-2.5 py-1 text-xs text-white backdrop-blur">
+              <span className={`h-2 w-2 rounded-full ${guide ? "bg-ok" : "bg-white/30"}`} />Guide</button>
           )}
           {camera === "on" && mode === "manual" && <span className="pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit rounded-full bg-black/55 px-3 py-1.5 text-xs backdrop-blur">{TIPS[tip]}</span>}
           {camera === "on" && mode === "auto" && scanning && <ScanHud reason={auto.reason} pulse={auto.pulse} count={sessionCount} />}

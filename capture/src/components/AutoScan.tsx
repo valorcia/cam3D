@@ -1,19 +1,21 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { AutoSelector, DENSITIES, frameStats, GUIDANCE, headingFrom, tiltBand, type Reason } from "@/lib/autoCapture";
+import { pitchFromBeta } from "@/lib/scanGuide";
 
 const ANALYSIS_W = 320;
 const PERIOD_MS = 125; // ~8 analyses per second
 
-export interface AutoMeta { heading: number | null; tilt: number | null }
+export interface AutoMeta { heading: number | null; tilt: number | null; pitch?: number | null }
 
 /** Analyses the live camera and hands over full-resolution frames worth keeping. */
 export function useAutoScan(video: React.RefObject<HTMLVideoElement | null>, running: boolean,
   density: keyof typeof DENSITIES, onFrame: (blob: Blob, meta: AutoMeta) => Promise<void>) {
   const [reason, setReason] = useState<Reason>("warmup");
   const [pulse, setPulse] = useState(0);
-  const [pose, setPose] = useState<AutoMeta>({ heading: null, tilt: null });
-  const poseRef = useRef<AutoMeta>({ heading: null, tilt: null });
+  const [pose, setPose] = useState<AutoMeta>({ heading: null, tilt: null, pitch: null });
+  const poseRef = useRef<AutoMeta>({ heading: null, tilt: null, pitch: null });
+  const lastShown = useRef<AutoMeta>({ heading: null, tilt: null, pitch: null });
   const selector = useRef(new AutoSelector());
   const busy = useRef(false);
   const cb = useRef(onFrame);
@@ -28,10 +30,11 @@ export function useAutoScan(video: React.RefObject<HTMLVideoElement | null>, run
     const handle = (e: DeviceOrientationEvent, absolute: boolean) => {
       if (absolute && e.alpha != null) hasAbsolute = true;
       if (!absolute && hasAbsolute) return;
-      const p = { heading: headingFrom(e), tilt: tiltBand(typeof e.beta === "number" ? e.beta : null) };
+      const p = { heading: headingFrom(e), tilt: tiltBand(typeof e.beta === "number" ? e.beta : null), pitch: pitchFromBeta(e.beta) };
       if (p.heading == null && p.tilt == null) return;
       poseRef.current = p;
-      setPose(p);
+      // the ring only needs a few updates per second; the guide reads poseRef directly
+      if (p.heading == null || poseChanged(lastShown.current, p)) { lastShown.current = p; setPose(p); }
     };
     const onAbs = (e: Event) => handle(e as DeviceOrientationEvent, true);
     const onRel = (e: Event) => handle(e as DeviceOrientationEvent, false);
@@ -72,7 +75,12 @@ export function useAutoScan(video: React.RefObject<HTMLVideoElement | null>, run
     return () => { stop = true; };
   }, [running, video]);
 
-  return { reason, pulse, pose };
+  return { reason, pulse, pose, poseRef };
+}
+
+function poseChanged(a: AutoMeta, b: AutoMeta): boolean {
+  if (a.heading == null || b.heading == null || a.tilt !== b.tilt) return true;
+  return Math.abs(((b.heading - a.heading + 540) % 360) - 180) >= 2;
 }
 
 /** Asks iOS for motion-sensor access (must be called from a user gesture). */

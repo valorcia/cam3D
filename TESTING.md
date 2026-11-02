@@ -210,24 +210,28 @@ corrigé, message affiché après 13 s. À confirmer sur l'appareil concerné.
 
 Application cam3D Capture en production locale (`next start`, relais local à la
 place de Vercel Blob), cam3D sur l'ordinateur, Chromium en émulation Pixel 7
-avec caméra simulée. 1er novembre 2026, **10/10 scénarios réussis** :
+avec caméra simulée. 2 novembre 2026, **12/12 scénarios réussis** :
 
 | Scénario | Résultat |
 |---|---|
 | Clé du relais : mauvaise clé refusée, bonne clé acceptée | OK |
-| Scan continu à la caméra, images envoyées chiffrées automatiquement | 14 images, 32 s |
+| Scan continu à la caméra, images envoyées chiffrées automatiquement | 15 images, 35 s |
+| Guide visuel pendant le scan : plein écran, maillage des points de l'image, vue couverte après le tour | 201 points, 100 % |
 | Le relais ne contient que des objets `C3D1` chiffrés, ni JPEG ni nom de fichier en clair | OK |
 | Hors connexion : 2 photos de plus, application rechargée sans réseau (service worker), photos toujours là | OK |
 | Retour du réseau : envoi automatique des 2 photos en attente | OK |
 | Ordinateur : lien `/t/#code` → cam3D local → import ; code retiré de la barre d'adresse | 14 photos |
-| Reconstruction des photos prises à distance | **14/14 caméras**, 0,29 px |
+| Reconstruction des photos prises à distance | **17/17 caméras**, 0,34 px |
 | Sans relais : ZIP exporté du téléphone importé dans un projet | 14 photos |
 | Retrait immédiat du relais depuis le téléphone | OK |
 | Application passée en arrière-plan : caméra libérée, rouverte au retour, aucun flux micro demandé | OK (2 novembre) |
 | Aucune erreur console hors période sans réseau | OK |
 
-Tests associés : `capture` (vitest, 3 tests : vecteur commun avec Python,
-mauvaise clé, fichier interverti, altération, code de transfert) et
+Tests associés : `capture` (vitest, 15 tests, dont chiffrement : vecteur commun avec Python,
+mauvaise clé, fichier interverti, altération, code de transfert ; guide : points
+trouvés aux coins d'un damier et aucun sur une image unie ou un simple bord,
+maillage couvrant toute l'image, couverture des directions autour du nord,
+côté à continuer, tour complet) et
 `backend/tests/test_relay.py` (4 tests : vecteur commun, hôtes autorisés et
 refus SSRF, import vérifié à l'octet près, fichier altéré et mauvaise clé
 refusés, ZIP avec chemins piégés).
@@ -235,7 +239,8 @@ refusés, ZIP avec chemins piégés).
 Bugs trouvés par ces tests et corrigés : un contrôle du relais échoué hors
 connexion restait mémorisé et bloquait tout envoi au retour du réseau ; le
 retrait d'un scan du relais était annulé par la synchronisation suivante ; les
-routes API redirigeaient (barre oblique finale), ce que le PC refuse.
+routes API redirigeaient (barre oblique finale), ce que le PC refuse ; le
+plein écran du scan était 16 px trop court (marge héritée de la page).
 
 **Non testé ici** : le vrai Vercel Blob (nécessite la création du stockage sur
 votre compte) et de vrais téléphones.

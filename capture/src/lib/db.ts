@@ -24,6 +24,7 @@ export interface Photo {
   sha256?: string;
   heading?: number | null; // compass heading when taken (continuous scan), for the coverage ring
   tilt?: number | null;    // height band 0 high / 1 middle / 2 low
+  pitch?: number | null;   // camera pitch in degrees (0 = horizon), for the on-screen guide
   auto?: boolean;          // picked automatically by the continuous scan
 }
 

@@ -37,6 +37,7 @@
 
 ## Capture à distance ✅ (livrée, testée avec un relais local)
 - Scan continu (images choisies automatiquement, guidage, anneau boussole) dans cam3D Capture et dans la capture locale.
+- Guide visuel façon LiDAR dans cam3D Capture (plein écran, maillage des points de l'image, zones non couvertes en bleu) : repère visuel, pas une mesure de profondeur. Pas encore dans la capture locale.
 - Reste : déploiement Vercel (Blob store, variables), essai sur téléphones réels.
 
 ## Prochaines étapes prioritaires

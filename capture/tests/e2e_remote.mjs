@@ -71,6 +71,14 @@ await step("téléphone : scan continu (images choisies automatiquement), envoy�
     await phone.waitForTimeout(250);
   }
   await phone.screenshot({ path: path.join(SHOTS, "40-scan-continu.png") });
+  const vf = await phone.locator('[data-testid="viewfinder"]').boundingBox();
+  const vp = phone.viewportSize();
+  expect(vf && vf.width >= vp.width - 1 && vf.height >= vp.height - 1, `le scan n'est pas en plein écran : ${JSON.stringify(vf)} pour ${JSON.stringify(vp)}`);
+  const g = phone.locator('[data-testid="scan-guide"]');
+  const pts = Number(await g.getAttribute("data-points")), cov = Number(await g.getAttribute("data-coverage"));
+  console.log(`   guide : ${pts} points dans l'image, vue couverte à ${cov} %`);
+  expect(pts > 30, `guide : ${pts} points`);
+  expect(cov >= 50, `guide : vue couverte à ${cov} % seulement`);
   await phone.locator('[data-testid="scan-toggle"]').click();
   // wait until the last frames being saved are counted (stable for 3 s)
   let last = -1;

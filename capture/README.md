@@ -22,6 +22,17 @@ Téléphone (cam3D Capture, HTTPS)          Relais (Vercel Blob)                
   (Léger / Normal / Dense). Un anneau montre les directions déjà couvertes et
   la hauteur (haut / milieu / bas), mesurées par la **boussole et
   l'inclinaison du téléphone** : ce n'est pas une estimation 3D.
+- **Guide visuel façon LiDAR** (bouton « Guide », actif par défaut) : pendant le
+  scan, l'image passe en plein écran et un maillage relie les points détectés
+  dans l'image (coins, ~200 points, recalculés ~7 fois par seconde). Les zones
+  dont la direction n'est pas encore couverte par une image gardée sont
+  teintées en bleu ; elles s'éclaircissent quand on les capture. Quand la vue
+  est couverte, une flèche indique de quel côté continuer, puis « changez de
+  hauteur » une fois le tour fait. **Ce n'est pas du LiDAR ni une mesure de
+  profondeur** : le maillage est en 2D sur l'image, et la couverture vient de la
+  boussole, de l'inclinaison et d'un champ de vue approximatif (~50° × 64°).
+  Sans capteurs d'orientation, la vue s'éclaircit juste après chaque image
+  gardée puis redevient bleue.
 - **Photo par photo** : déclencheur manuel, appareil photo natif, galerie.
 - **Hors connexion** : l'application s'ouvre sans réseau (service worker) ; les
   photos restent sur le téléphone et partent automatiquement au retour du réseau.
@@ -41,7 +52,8 @@ automatiquement) est reproduit. Le modèle 3D construit **en direct**, point par
 point, de Polycam repose sur le LiDAR et ARKit de l'iPhone Pro, inaccessibles à
 une page web (Safari n'expose ni la profondeur ni ARKit) : il demande une
 application iOS native (feuille de route). La reconstruction se fait ici sur
-l'ordinateur, après la capture.
+l'ordinateur, après la capture. Le guide visuel ci-dessus en reprend l'aspect pour se repérer,
+sans prétendre mesurer la profondeur.
 
 ## Sécurité
 | Menace | Protection |
