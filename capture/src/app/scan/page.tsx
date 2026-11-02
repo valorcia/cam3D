@@ -74,6 +74,29 @@ function ScanView() {
   useEffect(() => { if (online) sync(); }, [online, sync]);
   useEffect(() => { const t = setInterval(() => { if (navigator.onLine) sync(); }, 20000); return () => clearInterval(t); }, [sync]);
   useEffect(() => () => { stream.current?.getTracks().forEach((t) => t.stop()); }, []);
+  // Release the camera as soon as the app leaves the screen (iOS otherwise keeps it paused but held);
+  // it is reopened when the user comes back.
+  const resumeCamera = useRef(false);
+  useEffect(() => {
+    const onVis = (e: Event) => {
+      if (e.type === "pagehide" || document.visibilityState === "hidden") {
+        if (stream.current) {
+          resumeCamera.current = true;
+          stream.current.getTracks().forEach((t) => t.stop());
+          stream.current = null;
+          setScanning(false);
+          setCamera("off");
+        }
+      } else if (resumeCamera.current) {
+        resumeCamera.current = false;
+        startCamera(attempt.current);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", onVis);
+    return () => { document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pagehide", onVis); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     // keep the screen awake while scanning
     let lock: any = null;

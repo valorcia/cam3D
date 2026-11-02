@@ -170,6 +170,30 @@ await step("retrait immédiat du relais depuis le téléphone", async () => {
   expect(!fs.existsSync(path.join(DEV_DIR, "scans", scanId)), "le scan est toujours sur le relais");
 });
 
+await step("application passée en arrière-plan : caméra libérée, puis rouverte au retour", async () => {
+  const ctx = await browser.newContext({ ...devices["Pixel 7"], permissions: ["camera"] });
+  await ctx.addInitScript(() => {
+    const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    window.__streams = [];
+    navigator.mediaDevices.getUserMedia = async (c) => { const s = await gum(c); window.__streams.push(s); return s; };
+    window.__setVisibility = (v) => { Object.defineProperty(document, "visibilityState", { value: v, configurable: true }); document.dispatchEvent(new Event("visibilitychange")); };
+  });
+  const p = await ctx.newPage();
+  await p.goto(`${CAPTURE}/`);
+  await p.locator('[data-testid="new-scan"]').click();
+  await p.waitForURL(/\/scan\//);
+  await p.locator('[data-testid="start-camera"]').click();
+  await p.locator('[data-testid="video-info"]').waitFor();
+  await p.evaluate(() => window.__setVisibility("hidden"));
+  const live = await p.evaluate(() => window.__streams.flatMap((s) => s.getTracks()).filter((t) => t.readyState === "live").length);
+  expect(live === 0, `${live} piste(s) caméra encore actives en arrière-plan`);
+  await p.evaluate(() => window.__setVisibility("visible"));
+  await p.locator('[data-testid="video-info"]').waitFor({ timeout: 15000 });
+  const audio = await p.evaluate(() => window.__streams.some((s) => s.getAudioTracks().length > 0));
+  expect(!audio, "un flux micro a été demandé");
+  await ctx.close();
+});
+
 await step("caméra qui ne renvoie aucune image : nouvel essai puis message, jamais d'écran noir muet", async () => {
   const ctx = await browser.newContext({ ...devices["iPhone 13"] });
   // simulate a browser that grants the camera but never delivers a frame

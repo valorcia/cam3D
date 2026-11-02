@@ -223,6 +223,7 @@ avec caméra simulée. 1er novembre 2026, **10/10 scénarios réussis** :
 | Reconstruction des photos prises à distance | **14/14 caméras**, 0,29 px |
 | Sans relais : ZIP exporté du téléphone importé dans un projet | 14 photos |
 | Retrait immédiat du relais depuis le téléphone | OK |
+| Application passée en arrière-plan : caméra libérée, rouverte au retour, aucun flux micro demandé | OK (2 novembre) |
 | Aucune erreur console hors période sans réseau | OK |
 
 Tests associés : `capture` (vitest, 3 tests : vecteur commun avec Python,
