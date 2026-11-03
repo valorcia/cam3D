@@ -11,10 +11,14 @@
  */
 import Delaunator from "delaunator";
 
-export interface Feature { x: number; y: number } // normalised 0..1
+export interface Feature { x: number; y: number; kind?: 0 | 1 | 2 } // normalised 0..1; 0 corner, 1 edge, 2 grid
 
-/** Corner-like points of a grayscale image (Shi-Tomasi minimum eigenvalue, one per grid cell). */
-export function detectFeatures(gray: Float32Array, w: number, h: number, cell = Math.max(6, Math.round(w / 22))): Feature[] {
+/**
+ * One point per grid cell of a grayscale image, so that the mesh is fine everywhere:
+ * the strongest corner of the cell (Shi-Tomasi minimum eigenvalue) when there is one,
+ * otherwise the strongest edge pixel, otherwise the cell centre (plain areas).
+ */
+export function detectFeatures(gray: Float32Array, w: number, h: number, cell = Math.max(4, Math.round(w / 32))): Feature[] {
   const ix = new Float32Array(w * h), iy = new Float32Array(w * h);
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
@@ -23,7 +27,7 @@ export function detectFeatures(gray: Float32Array, w: number, h: number, cell = 
       iy[i] = (gray[i + w] - gray[i - w]) * 0.5;
     }
   }
-  const resp = new Float32Array(w * h);
+  const resp = new Float32Array(w * h), grad = new Float32Array(w * h);
   let max = 0;
   for (let y = 2; y < h - 2; y++) {
     for (let x = 2; x < w - 2; x++) {
@@ -36,38 +40,50 @@ export function detectFeatures(gray: Float32Array, w: number, h: number, cell = 
       }
       const half = (sxx - syy) / 2;
       const r = (sxx + syy) / 2 - Math.sqrt(half * half + sxy * sxy);
-      resp[y * w + x] = r;
+      const i = y * w + x;
+      resp[i] = r;
+      grad[i] = sxx + syy;
       if (r > max) max = r;
     }
   }
-  const threshold = Math.max(max * 0.03, 60); // 60 ≈ a few grey levels of contrast in both directions
+  const cornerMin = Math.max(max * 0.01, 60); // 60 ≈ a few grey levels of contrast in both directions
+  const edgeMin = 9 * 6 * 6;                  // gradient of ~6 grey levels
   const out: Feature[] = [];
   for (let cy = 0; cy < h; cy += cell) {
     for (let cx = 0; cx < w; cx += cell) {
-      let best = threshold, bx = -1, by = -1;
+      let bc = cornerMin, bcx = -1, bcy = -1, be = edgeMin, bex = -1, bey = -1;
       for (let y = Math.max(2, cy); y < Math.min(h - 2, cy + cell); y++) {
         for (let x = Math.max(2, cx); x < Math.min(w - 2, cx + cell); x++) {
-          const r = resp[y * w + x];
-          if (r > best) { best = r; bx = x; by = y; }
+          const i = y * w + x;
+          if (resp[i] > bc) { bc = resp[i]; bcx = x; bcy = y; }
+          if (grad[i] > be) { be = grad[i]; bex = x; bey = y; }
         }
       }
-      if (bx >= 0) out.push({ x: bx / (w - 1), y: by / (h - 1) });
+      if (bcx >= 0) out.push({ x: bcx / (w - 1), y: bcy / (h - 1), kind: 0 });
+      else if (bex >= 0) out.push({ x: bex / (w - 1), y: bey / (h - 1), kind: 1 });
+      else out.push({ x: Math.min(1, (cx + cell / 2) / (w - 1)), y: Math.min(1, (cy + cell / 2) / (h - 1)), kind: 2 });
     }
   }
   return out;
 }
 
 /** Triangles (flat index triples into the returned points) covering the whole frame. */
-export function guideMesh(features: Feature[]): { points: Feature[]; triangles: Uint32Array } {
+export function guideMesh(features: Feature[], border = 12): { points: Feature[]; triangles: Uint32Array; halfedges: Int32Array } {
   const points: Feature[] = [...features];
-  const n = 6;
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    points.push({ x: t, y: 0 }, { x: t, y: 1 });
-    if (i > 0 && i < n) points.push({ x: 0, y: t }, { x: 1, y: t });
+  for (let i = 0; i <= border; i++) {
+    const t = i / border;
+    points.push({ x: t, y: 0, kind: 2 }, { x: t, y: 1, kind: 2 });
+    if (i > 0 && i < border) points.push({ x: 0, y: t, kind: 2 }, { x: 1, y: t, kind: 2 });
   }
   const d = Delaunator.from(points, (p) => p.x, (p) => p.y);
-  return { points, triangles: d.triangles };
+  return { points, triangles: d.triangles, halfedges: d.halfedges };
+}
+
+/** Part of the video frame visible in a box filled with object-fit: cover (normalised frame coordinates). */
+export function coverCrop(videoW: number, videoH: number, boxW: number, boxH: number): { x: number; y: number; w: number; h: number } {
+  const s = Math.max(boxW / videoW, boxH / videoH);
+  const w = Math.min(1, boxW / s / videoW), h = Math.min(1, boxH / s / videoH);
+  return { x: (1 - w) / 2, y: (1 - h) / 2, w, h };
 }
 
 /** Approximate field of view of a phone main camera (degrees) for the displayed video. */
@@ -87,13 +103,14 @@ export function pitchFromBand(band: number | null | undefined): number | null {
   return band == null ? null : band === 0 ? -40 : band === 2 ? 35 : 0;
 }
 
-const STEP = 5; // degrees per cell
+const STEP = 2; // degrees per cell
 const COLS = 360 / STEP, ROWS = 180 / STEP;
 const wrap = (a: number) => ((a % 360) + 360) % 360;
 
 /** Viewing directions covered by kept frames, on a yaw × pitch grid. */
 export class CoverageMap {
   readonly counts = new Uint16Array(COLS * ROWS);
+  version = 0; // incremented at every change, so that a view can tell when to redraw
 
   private col(yaw: number) { return Math.floor(wrap(yaw) / STEP) % COLS; }
   private row(pitch: number) { return Math.max(0, Math.min(ROWS - 1, Math.floor((pitch + 90) / STEP))); }
@@ -103,6 +120,7 @@ export class CoverageMap {
     const r0 = this.row(pitch - fovV / 2), r1 = this.row(pitch + fovV / 2);
     const cols = Math.max(1, Math.round(fovH / STEP));
     const c0 = this.col(yaw - fovH / 2);
+    this.version++;
     for (let r = r0; r <= r1; r++) for (let k = 0; k < cols; k++) {
       const i = r * COLS + ((c0 + k) % COLS);
       if (this.counts[i] < 65535) this.counts[i]++;

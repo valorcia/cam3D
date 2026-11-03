@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CoverageMap, detectFeatures, fieldOfView, guideMesh, pitchFromBeta } from "./scanGuide";
+import { CoverageMap, coverCrop, detectFeatures, fieldOfView, guideMesh, pitchFromBeta } from "./scanGuide";
 
 function image(w: number, h: number, f: (x: number, y: number) => number) {
   const g = new Float32Array(w * h);
@@ -8,20 +8,38 @@ function image(w: number, h: number, f: (x: number, y: number) => number) {
 }
 
 describe("detectFeatures", () => {
-  it("finds no point on a flat image nor on a plain edge", () => {
-    expect(detectFeatures(image(96, 72, () => 128), 96, 72)).toHaveLength(0);
-    expect(detectFeatures(image(96, 72, (x) => (x < 48 ? 40 : 200)), 96, 72)).toHaveLength(0);
+  it("fills a plain image with a regular grid (no corner) so the mesh stays fine", () => {
+    const pts = detectFeatures(image(96, 72, () => 128), 96, 72, 6);
+    expect(pts).toHaveLength(16 * 12);
+    expect(pts.every((p) => p.kind === 2)).toBe(true);
+  });
+
+  it("follows a plain edge with edge points, without inventing corners", () => {
+    const pts = detectFeatures(image(96, 72, (x) => (x < 48 ? 40 : 200)), 96, 72, 6);
+    expect(pts.filter((p) => p.kind === 0)).toHaveLength(0);
+    const edge = pts.filter((p) => p.kind === 1);
+    expect(edge.length).toBeGreaterThanOrEqual(10);
+    for (const p of edge) expect(Math.abs(p.x * 95 - 47.5)).toBeLessThanOrEqual(1.5);
   });
 
   it("finds the corners of a checkerboard, near the real corners", () => {
     const w = 96, h = 72, sq = 24;
-    const pts = detectFeatures(image(w, h, (x, y) => ((Math.floor(x / sq) + Math.floor(y / sq)) % 2 ? 220 : 30)), w, h);
+    const pts = detectFeatures(image(w, h, (x, y) => ((Math.floor(x / sq) + Math.floor(y / sq)) % 2 ? 220 : 30)), w, h, 12).filter((p) => p.kind === 0);
     expect(pts.length).toBeGreaterThanOrEqual(6); // 3 × 2 inner corners
     for (const p of pts) {
       const x = p.x * (w - 1), y = p.y * (h - 1);
       const dx = Math.abs(x - Math.round(x / sq) * sq), dy = Math.abs(y - Math.round(y / sq) * sq);
       expect(Math.max(dx, dy)).toBeLessThanOrEqual(2);
     }
+  });
+});
+
+describe("coverCrop", () => {
+  it("keeps the centre of a 4:3 landscape frame shown on a tall phone screen", () => {
+    const c = coverCrop(1280, 960, 412, 839);
+    expect(c.h).toBeCloseTo(1, 6);
+    expect(c.w).toBeCloseTo((412 / 839) * (960 / 1280), 6);
+    expect(c.x).toBeCloseTo((1 - c.w) / 2, 6);
   });
 });
 

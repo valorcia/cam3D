@@ -23,8 +23,11 @@ Téléphone (cam3D Capture, HTTPS)          Relais (Vercel Blob)                
   la hauteur (haut / milieu / bas), mesurées par la **boussole et
   l'inclinaison du téléphone** : ce n'est pas une estimation 3D.
 - **Guide visuel façon LiDAR** (bouton « Guide », actif par défaut) : pendant le
-  scan, l'image passe en plein écran et un maillage relie les points détectés
-  dans l'image (coins, ~200 points, recalculés ~7 fois par seconde). Les zones
+  scan, l'image passe en plein écran et un maillage fin (triangles d'environ
+  12 px à l'écran, ~2 500 points sur un téléphone) relie les points de la
+  partie visible de l'image : coins, à défaut contours, à défaut grille
+  régulière dans les zones unies ; recalculé ~7 fois par seconde dans un Web
+  Worker (OffscreenCanvas) pour ne pas ralentir le choix des images. Les zones
   dont la direction n'est pas encore couverte par une image gardée sont
   teintées en bleu ; elles s'éclaircissent quand on les capture. Quand la vue
   est couverte, une flèche indique de quel côté continuer, puis « changez de

@@ -76,8 +76,11 @@ await step("téléphone : scan continu (images choisies automatiquement), envoy�
   expect(vf && vf.width >= vp.width - 1 && vf.height >= vp.height - 1, `le scan n'est pas en plein écran : ${JSON.stringify(vf)} pour ${JSON.stringify(vp)}`);
   const g = phone.locator('[data-testid="scan-guide"]');
   const pts = Number(await g.getAttribute("data-points")), cov = Number(await g.getAttribute("data-coverage"));
-  console.log(`   guide : ${pts} points dans l'image, vue couverte à ${cov} %`);
-  expect(pts > 30, `guide : ${pts} points`);
+  const cell = Number(await g.getAttribute("data-cell"));
+  expect(await g.getAttribute("data-renderer") === "worker", `guide dessiné hors worker (${await g.getAttribute("data-renderer")})`);
+  console.log(`   guide : ${pts} points, triangles d'environ ${cell} px à l'écran, vue couverte à ${cov} %`);
+  expect(pts > 1000, `guide : ${pts} points seulement`);
+  expect(cell <= 16, `guide : triangles de ${cell} px, trop grands`);
   expect(cov >= 50, `guide : vue couverte à ${cov} % seulement`);
   await phone.locator('[data-testid="scan-toggle"]').click();
   // wait until the last frames being saved are counted (stable for 3 s)

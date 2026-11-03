@@ -216,7 +216,7 @@ avec caméra simulée. 2 novembre 2026, **12/12 scénarios réussis** :
 |---|---|
 | Clé du relais : mauvaise clé refusée, bonne clé acceptée | OK |
 | Scan continu à la caméra, images envoyées chiffrées automatiquement | 15 images, 35 s |
-| Guide visuel pendant le scan : plein écran, maillage des points de l'image, vue couverte après le tour | 201 points, 100 % |
+| Guide visuel pendant le scan : plein écran, maillage fin dessiné dans un Web Worker, vue couverte après le tour | 2 590 points, triangles ~12 px, 100 % ; 14 images comme sans guide |
 | Le relais ne contient que des objets `C3D1` chiffrés, ni JPEG ni nom de fichier en clair | OK |
 | Hors connexion : 2 photos de plus, application rechargée sans réseau (service worker), photos toujours là | OK |
 | Retour du réseau : envoi automatique des 2 photos en attente | OK |
@@ -227,9 +227,10 @@ avec caméra simulée. 2 novembre 2026, **12/12 scénarios réussis** :
 | Application passée en arrière-plan : caméra libérée, rouverte au retour, aucun flux micro demandé | OK (2 novembre) |
 | Aucune erreur console hors période sans réseau | OK |
 
-Tests associés : `capture` (vitest, 15 tests, dont chiffrement : vecteur commun avec Python,
+Tests associés : `capture` (vitest, 17 tests, dont chiffrement : vecteur commun avec Python,
 mauvaise clé, fichier interverti, altération, code de transfert ; guide : points
-trouvés aux coins d'un damier et aucun sur une image unie ou un simple bord,
+trouvés aux coins d'un damier, grille régulière sur une image unie, points de
+contour sans faux coins sur un simple bord, recadrage plein écran,
 maillage couvrant toute l'image, couverture des directions autour du nord,
 côté à continuer, tour complet) et
 `backend/tests/test_relay.py` (4 tests : vecteur commun, hôtes autorisés et
@@ -240,7 +241,11 @@ Bugs trouvés par ces tests et corrigés : un contrôle du relais échoué hors
 connexion restait mémorisé et bloquait tout envoi au retour du réseau ; le
 retrait d'un scan du relais était annulé par la synchronisation suivante ; les
 routes API redirigeaient (barre oblique finale), ce que le PC refuse ; le
-plein écran du scan était 16 px trop court (marge héritée de la page).
+plein écran du scan était 16 px trop court (marge héritée de la page) ; le
+maillage fin dessiné sur le fil principal faisait tomber le scan de 14 à 9
+images (dessin déplacé dans un Web Worker) ; le maillage était calculé sur
+l'image entière alors que l'écran n'en montre qu'une partie, d'où des
+triangles 2 fois trop grands.
 
 **Non testé ici** : le vrai Vercel Blob (nécessite la création du stockage sur
 votre compte) et de vrais téléphones.
