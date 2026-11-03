@@ -150,23 +150,88 @@ def run_densify(work_dir: Path, profile: QualityProfile, tools: ToolRegistry, lo
     return DenseResult(str(scene), str(out), str(ply), n)
 
 
+# Measured on "Person Hall" (329 photos, FAST): 15.7 M dense points → 4.25 M Delaunay vertices at
+# --min-point-distance 2.5, peak memory ~13.2 GB during the tetrahedralization / graph-cut.
+_MESH_BYTES_PER_VERTEX = 3200
+_MESH_INSERT_RATIO = 0.27      # inserted vertices / dense points at 2.5 px
+_MESH_REF_DISTANCE = 2.5
+FACES_REF_IMAGES = 60          # the profiles' face budgets are sized for captures of about this many photos
+FACES_MAX_SCALE = 8
+
+
+def scaled_face_target(profile: QualityProfile, num_images: int) -> int:
+    """Face budget of the mesh: the profile's budget for an object-sized capture, growing with the number
+    of photos (a building photographed from 300 viewpoints holds far more detail than a vase)."""
+    if not profile.mesh_target_faces:
+        return 0
+    scale = min(FACES_MAX_SCALE, max(1.0, num_images / FACES_REF_IMAGES))
+    return int(round(profile.mesh_target_faces * scale, -3))
+
+
+def safe_min_point_distance(wanted: float, dense_points: int, available_bytes: int | None) -> tuple[float, int]:
+    """Spacing of the points inserted in the Delaunay mesh so that it fits in memory.
+
+    Returns (distance in px, estimated peak bytes). An estimate from one measured scene: the real
+    figure depends on the capture; ReconstructMesh is retried with fewer points if it still fails."""
+    est_vertices = dense_points * _MESH_INSERT_RATIO * (_MESH_REF_DISTANCE / max(0.5, wanted)) ** 2
+    est = int(min(dense_points, est_vertices) * _MESH_BYTES_PER_VERTEX)
+    if not available_bytes:
+        return wanted, est
+    budget = 0.8 * available_bytes
+    if est <= budget:
+        return wanted, est
+    return round(wanted * (est / budget) ** 0.5, 2), est
+
+
+def _available_memory() -> int | None:
+    try:
+        from ..hardware import _ram
+        _total, avail = _ram()
+        return avail * 1024 * 1024 if avail else None
+    except Exception:
+        return None
+
+
 def run_mesh(work_dir: Path, profile: QualityProfile, tools: ToolRegistry, logger: StageLogger,
              dense: DenseResult, cancel: CancelToken | None = None, threads: int = 0) -> MeshResult:
     threads = threads or (os.cpu_count() or 2)
     mvs_dir = Path(dense.dense_mvs).parent
     out = mvs_dir / "scene_dense_mesh.mvs"   # ReconstructMesh writes <out>.ply (the .mvs only for non-default archive types)
     logger.start("Maillage (ReconstructMesh, Delaunay + graph-cut)")
-    cmd = [
-        tools.openmvs_bin("ReconstructMesh"), dense.dense_mvs, "-w", str(mvs_dir), "-o", str(out),
-        "--min-point-distance", str(profile.mesh_min_point_distance),
-        "--remove-spurious", "30", "--remove-spikes", "1", "--close-holes", "30",
-        "--smooth", str(profile.mesh_smooth),
-        *_common_args(threads),
-    ]
-    if profile.mesh_target_faces:
-        cmd += ["--target-face-num", str(profile.mesh_target_faces)]
-    run_tool(cmd, cwd=mvs_dir, on_line=_stream(logger), cancel=cancel)
+    images_dir = Path(work_dir) / "images"
+    num_images = sum(1 for _ in images_dir.glob("*.jpg")) if images_dir.is_dir() else 0
+    target = scaled_face_target(profile, num_images)
+    if target and target != profile.mesh_target_faces:
+        logger.log(f"{num_images} photos : budget du maillage porté à {fmt_int(target)} faces "
+                   f"(profil : {fmt_int(profile.mesh_target_faces)} pour ~{FACES_REF_IMAGES} photos)")
+    avail = _available_memory()
+    dist, est = safe_min_point_distance(profile.mesh_min_point_distance, dense.num_points, avail)
+    if dist != profile.mesh_min_point_distance:
+        logger.log(f"Mémoire : ~{est / 1e9:.1f} Go estimés pour {fmt_int(dense.num_points)} points denses, "
+                   f"{(avail or 0) / 1e9:.1f} Go disponibles : points du maillage espacés de {dist} px "
+                   f"au lieu de {profile.mesh_min_point_distance} px")
     ply = mvs_dir / "scene_dense_mesh.ply"
+    for attempt in range(3):
+        cmd = [
+            tools.openmvs_bin("ReconstructMesh"), dense.dense_mvs, "-w", str(mvs_dir), "-o", str(out),
+            "--min-point-distance", str(dist),
+            "--remove-spurious", "30", "--remove-spikes", "1", "--close-holes", "30",
+            "--smooth", str(profile.mesh_smooth),
+            *_common_args(threads),
+        ]
+        if target:
+            cmd += ["--target-face-num", str(target)]
+        try:
+            run_tool(cmd, cwd=mvs_dir, on_line=_stream(logger), cancel=cancel)
+            break
+        except ToolError as e:
+            if attempt == 2:
+                raise
+            # typically killed for lack of memory (code -9 / 137) on very large scenes
+            dist = round(dist * 2, 2)
+            logger.log(f"ReconstructMesh a échoué (code {e.returncode}, mémoire insuffisante ?) : "
+                       f"nouvel essai avec des points espacés de {dist} px")
+            ply.unlink(missing_ok=True)
     if not ply.exists():
         raise RuntimeError("ReconstructMesh n'a pas produit de maillage (voir logs/mesh.log).")
     v, f = _count_ply(ply)

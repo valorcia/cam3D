@@ -99,8 +99,34 @@ contre 11,4 min en incrémental. L'écart doit grandir avec le nombre de photos
 au-delà de 329.
 
 La durée SfM inclut l'extraction des points (~5,5 min pour 329 photos) et
-l'appariement (~10 min). Les étapes suivantes (nuage dense, maillage, texture)
-sont proportionnelles au nombre de photos et à la résolution du profil.
+l'appariement (~10 min).
+
+**Maillage des grandes scènes.** Les budgets de faces des profils sont pensés
+pour un objet (~60 photos). Ils sont maintenant multipliés par
+`nombre de photos / 60` (au plus ×8 ; ULTRA reste sans décimation), et
+l'espacement des points insérés dans le maillage (`--min-point-distance`) est
+augmenté si la mémoire estimée dépasse 80 % de la mémoire disponible
+(estimation tirée de la mesure ci-dessous : ~3,2 Ko par sommet de la
+tétraédrisation). Si ReconstructMesh échoue quand même (manque de mémoire),
+il est relancé avec des points deux fois plus espacés (2 fois au plus).
+
+Chaîne complète RAPIDE sur les 329 photos (même machine, 16 Go) :
+
+| Étape | Avant | Après (budget adapté) |
+|---|---|---|
+| Caméras | 329/329, 121 841 points, 0,68 px | identique |
+| Nuage dense | 15 726 000 points | identique |
+| Maillage brut (ReconstructMesh) | 5 640 363 faces | — |
+| Maillage conservé | **132 887 faces** (plafond 150 000) | **730 583 faces** (budget 822 000), espacement 2,58 px au lieu de 2,5 |
+| Texture | 1 atlas 4096² | 2 atlas 4096² |
+| Pic de mémoire (maillage) | ~13,2 Go | ~9,7 Go |
+| Durée | 65 min au total | maillage + texture 13,4 min au lieu de ~9 |
+
+Rendu : avec le budget adapté, briques, encadrements de fenêtres, banc et
+massifs sont lisibles ; avant, toit déchiqueté et façades lisses. Les profils
+HAUTE QUALITÉ et ULTRA n'ont **pas** été mesurés sur ce jeu : leur nuage dense
+serait ~4× plus grand, l'espacement des points serait alors augmenté pour tenir
+en mémoire sur 16 Go.
 
 ## Limites connues et pistes
 

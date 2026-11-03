@@ -56,3 +56,26 @@ def test_offline_download_failure_falls_back(tmp_path, monkeypatch):
     logs: list[str] = []
     assert vocab.vocab_tree_for_run(logs.append) is None
     assert any("cam3d fetch-models" in m for m in logs)
+
+
+def test_face_budget_grows_with_the_number_of_photos():
+    from cam3d.engine.stages.mvs import FACES_MAX_SCALE, scaled_face_target
+    fast, ultra = get_profile("fast"), get_profile("ultra")
+    assert scaled_face_target(fast, 11) == fast.mesh_target_faces       # object: unchanged
+    assert scaled_face_target(fast, 329) > 5 * fast.mesh_target_faces   # building: ~5.5×
+    assert scaled_face_target(fast, 100_000) == FACES_MAX_SCALE * fast.mesh_target_faces
+    assert scaled_face_target(ultra, 329) == 0                          # no decimation stays no decimation
+
+
+def test_mesh_point_spacing_adapts_to_memory():
+    from cam3d.engine.stages.mvs import safe_min_point_distance
+    gib = 2 ** 30
+    # the measured scene: fits in 16 GB with almost no change
+    d, est = safe_min_point_distance(2.5, 15_726_000, 15 * gib)
+    assert 2.5 <= d < 2.8 and 12e9 < est < 15e9
+    # 4× more points with a finer spacing on the same machine: spaced out instead of crashing
+    d, est = safe_min_point_distance(2.0, 60_000_000, 15 * gib)
+    assert d > 4
+    # plenty of memory or unknown memory: the profile's value
+    assert safe_min_point_distance(2.0, 1_000_000, 64 * gib)[0] == 2.0
+    assert safe_min_point_distance(2.0, 60_000_000, None)[0] == 2.0

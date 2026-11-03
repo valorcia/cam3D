@@ -50,6 +50,13 @@ outils laissait des journaux OpenMVS dans le dossier courant.
   relative existante, `assimp info` ;
 - exports des 5 formats (zips contenant textures, GLB rechargé avec texture) ;
 - préparation : exclusion d'une image floue, fichiers non image ignorés ;
+- préparation : marque, modèle et focale EXIF conservés (orientation appliquée,
+  GPS retiré) et lus par COLMAP : une caméra partagée, focale attendue ;
+- grandes scènes : choix exhaustif / séquentiel et incrémental / global selon
+  le nombre de photos ; budget de faces proportionnel au nombre de photos ;
+  espacement des points du maillage augmenté quand la mémoire manque ; vocabulaire refusé si la somme SHA-256 ne correspond
+  pas (aucun fichier partiel laissé), puis accepté et mis en cache ; repli sans
+  erreur hors ligne ou avec `CAM3D_NO_DOWNLOAD=1` ;
 - alignement des murs sur les axes et face photographiée vers +Z (boîte tournée de 30°) ;
 - sorties de texturage jamais confondues avec le maillage d'entrée ; nuage de points compact relu par Open3D.
 
@@ -283,6 +290,23 @@ et STL (dimensions vérifiées), exports supprimés quand l'étalonnage change.
 traitement relisant `meshes/model.obj` (ré-exports, édition, SketchUp) perdait
 la texture. Le chargeur résout désormais `map_Kd` lui-même ; deux tests, qui
 échouent sur l'ancienne version, l'exigent.
+
+## Grandes scènes (« Person Hall », COLMAP, 329 photos 21 Mpx)
+
+Mesures manuelles du 3 novembre 2026 (4 cœurs, 16 Go, sans GPU), détaillées
+dans PHOTOGRAMMETRY.md : SfM 165 photos avant / après EXIF + boucles +
+ressemblance ; 329 photos en reconstruction globale et incrémentale (329/329
+dans les deux cas) ; chaîne complète RAPIDE jusqu'au GLB et au DAE (65 min),
+puis maillage et texture refaits avec le budget adapté (730 583 faces au lieu
+de 132 887). Jeu utilisé uniquement pour les tests, non redistribué (une photo,
+à cheval sur les deux parties de l'archive, n'a pas pu être extraite).
+
+Bugs trouvés : les copies de travail perdaient les EXIF (focale par défaut et
+un étalonnage par photo) ; le plafond de faces des profils réduisait un
+bâtiment entier à 133 000 faces ; le pic de mémoire du maillage (~13 Go)
+aurait fait échouer une scène plus grande sur 16 Go.
+
+**Non testé** : HAUTE QUALITÉ / ULTRA sur ce jeu, plus de 329 photos, GPU.
 
 ## Test d'intégration (photos réelles)
 
