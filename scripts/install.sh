@@ -34,6 +34,9 @@ else
   echo "Node.js absent : l'API fonctionne, mais l'interface Web ne sera pas construite (https://nodejs.org, version 20+)."
 fi
 echo
+echo "==> Vocabulaire visuel COLMAP (grandes scènes de plus de 150 images, ~72 Mo, gratuit)"
+cam3d fetch-models || echo "Non téléchargé (hors ligne ?) : il le sera au premier grand scan, ou plus tard avec : cam3d fetch-models"
+echo
 cam3d doctor || true
 echo
 echo "Installation terminée. Démarrage : ./scripts/start.sh"

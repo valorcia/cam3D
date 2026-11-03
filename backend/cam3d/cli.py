@@ -51,6 +51,9 @@ def cmd_doctor(args) -> int:
         print(f"  OpenMVS/{name:<18}: {t.path or 'ABSENT'}")
     print(f"  blender    : {tools.blender.path if tools.blender and tools.blender.available else 'absent (optionnel)'}")
     print(f"  ffmpeg     : {tools.ffmpeg.path if tools.ffmpeg and tools.ffmpeg.available else 'absent (vidéo indisponible)'}")
+    from .engine.vocab import cached_vocab_tree
+    vt = cached_vocab_tree()
+    print(f"  vocabulaire: {vt if vt else 'absent (téléchargé au 1er scan de plus de 150 images, ou : cam3d fetch-models)'}")
     ok = tools.pycolmap and tools.pycolmap.available and tools.openmvs_available
     print("\nReconstruction possible : " + ("OUI" if ok else "NON (voir INSTALLATION.md)"))
     return 0 if ok else 1
@@ -174,6 +177,16 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_fetch_models(args) -> int:
+    from .engine.vocab import fetch_vocab_tree
+    try:
+        print(f"Vocabulaire visuel : {fetch_vocab_tree()}")
+        return 0
+    except Exception as e:
+        print(f"Échec du téléchargement : {e}", file=sys.stderr)
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="cam3d", description="cam3D - scan 3D photoréaliste, gratuit et local")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -193,6 +206,8 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--formats", default="obj,dae")
     e.add_argument("--name", default="model")
     e.set_defaults(func=cmd_export)
+    f = sub.add_parser("fetch-models", help="télécharger le vocabulaire visuel COLMAP (grandes scènes, ~72 Mo, une fois)")
+    f.set_defaults(func=cmd_fetch_models)
     s = sub.add_parser("serve", help="démarrer l'API locale")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8765)

@@ -21,4 +21,8 @@ if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { Write-Host "FFmpe
 if (Get-Command npm -ErrorAction SilentlyContinue) {
   Push-Location frontend; npm ci --no-audit --no-fund; $env:NEXT_TELEMETRY_DISABLED = "1"; npm run build; Pop-Location
 } else { Write-Host "Node.js absent : interface Web non construite (https://nodejs.org)." }
+Write-Host ""
+Write-Host "==> Vocabulaire visuel COLMAP (grandes scènes de plus de 150 images, ~72 Mo, gratuit)"
+& ".venv\Scripts\cam3d.exe" fetch-models
+if ($LASTEXITCODE -ne 0) { Write-Host "Non téléchargé (hors ligne ?) : il le sera au premier grand scan, ou plus tard avec : cam3d fetch-models" }
 & ".venv\Scripts\cam3d.exe" doctor

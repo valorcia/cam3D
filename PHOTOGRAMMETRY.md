@@ -4,8 +4,8 @@
 
 | # | Étape | Outil | Entrées → sorties | Progression |
 |---|---|---|---|---|
-| 1 | Préparation | Pillow / OpenCV | `originals/` → `processed/images/` (JPEG q95, EXIF orientation appliquée, redimensionnées selon le profil), `images.json` (netteté = variance du laplacien, luminosité, focale EXIF) | mesurée (image i/N) |
-| 2 | Estimation des caméras (SfM) | pycolmap (COLMAP) | SIFT → appariement exhaustif (≤150 images) ou séquentiel → cartographie incrémentale → `sparse/0/` (bin + txt), `points.ply`, `sfm.json` | mesurée (caméra i/N) |
+| 1 | Préparation | Pillow / OpenCV | `originals/` → `processed/images/` (JPEG q95, EXIF orientation appliquée, redimensionnées selon le profil ; marque, modèle et focale EXIF conservés pour COLMAP, rien d'autre — ni GPS ni date), `images.json` (netteté = variance du laplacien, luminosité, focale EXIF) | mesurée (image i/N) |
+| 2 | Estimation des caméras (SfM) | pycolmap (COLMAP / GLOMAP) | SIFT → appariement exhaustif (≤ 150 images) ou séquentiel + boucles + ressemblance (> 150, voir « Grandes scènes ») → cartographie incrémentale (globale GLOMAP à partir de 300 images) → `sparse/0/` (bin + txt), `points.ply`, `sfm.json` | mesurée (caméra i/N) ; non détaillée en mode global |
 | 3 | Reconstruction dense | pycolmap `undistort_images` + OpenMVS `InterfaceCOLMAP`, `DensifyPointCloud` | `dense/` (PINHOLE) → `mvs/scene_dense.ply` | mesurée (cartes de profondeur i/N) |
 | 4 | Maillage | OpenMVS `ReconstructMesh` + filtrage maison | `scene_dense_mesh.ply` → `scene_dense_mesh_filtered.ply` | activité |
 | 5 | Raffinement (ULTRA) | OpenMVS `RefineMesh` | maillage raffiné photométriquement | activité |
@@ -61,12 +61,52 @@ Jeu « Sceaux Castle » (11 photos 2832×2128, openMVG) :
 Ces durées sont des mesures ; l'application n'affichera des estimations que
 lorsqu'un historique local existera (phase 3).
 
+## Grandes scènes (plusieurs centaines de photos)
+
+| Nombre de photos | Appariement | Reconstruction des caméras |
+|---|---|---|
+| ≤ 150 | exhaustif (toutes les paires) | incrémentale |
+| 151 à 299 | séquentiel (10 voisines dans l'ordre de prise de vue) + détection de boucles + ressemblance visuelle (30 plus proches) | incrémentale |
+| ≥ 300 | idem | globale (GLOMAP, intégré à COLMAP 4) |
+
+- **Ressemblance visuelle et boucles** : vocabulaire visuel COLMAP (fichier
+  gratuit, ~72 Mo, vérifié par SHA-256, `cam3d fetch-models`). Il retrouve les
+  photos d'un même endroit prises à des moments différents (retour au point
+  de départ, imports dans le désordre). Sans lui : séquentiel seul, signalé.
+- **Étalonnage partagé** : la marque, le modèle et la focale EXIF sont gardés
+  dans les copies de travail ; les photos d'un même appareil partagent un
+  étalonnage (une caméra par orientation) au lieu d'un étalonnage estimé
+  séparément pour chaque photo, avec une focale de départ correcte.
+- Paramètres modifiables par profil : `matching` (`auto`, `exhaustive`,
+  `sequential`, `vocabtree`) et `mapper` (`auto`, `incremental`, `global`).
+
+Mesures (4 cœurs CPU, sans GPU, profil RAPIDE : images 1 600 px, 4 096 points
+SIFT) sur « Person Hall » (COLMAP, bâtiment photographié en entier, 21 Mpx) :
+
+| Jeu | Version | Caméras | Points 3D | Erreur | Durée SfM |
+|---|---|---|---|---|---|
+| 165 photos | avant (EXIF perdu, séquentiel sans boucles) | 165/165 (165 étalonnages, focale par défaut 1 920 px) | 52 835 | 0,54 px | 392 s |
+| 165 photos | après (EXIF, séquentiel + boucles + ressemblance) | 165/165 (2 étalonnages, focale 1 094 px) | 58 514 | 0,61 px | 531 s |
+| 329 photos | après, reconstruction globale | 329/329 | 121 589 | 0,67 px | 1 414 s ¹ |
+| 329 photos | après, reconstruction incrémentale (pour comparer) | 329/329 | 124 076 | 0,65 px | 1 507 s |
+
+¹ Une autre reconstruction tournait en même temps pendant ~4 min : durée majorée.
+
+À 329 photos, les deux méthodes donnent la même qualité ; l'étape de
+reconstruction des caméras prend ~8 min en global (malgré la charge en plus)
+contre 11,4 min en incrémental. L'écart doit grandir avec le nombre de photos
+(l'incrémental refait des ajustements de plus en plus gros) : non mesuré ici
+au-delà de 329.
+
+La durée SfM inclut l'extraction des points (~5,5 min pour 329 photos) et
+l'appariement (~10 min). Les étapes suivantes (nuage dense, maillage, texture)
+sont proportionnelles au nombre de photos et à la résolution du profil.
+
 ## Limites connues et pistes
 
 - Pas d'échelle métrique sans étalonnage (phase 6).
-- L'appariement séquentiel (> 150 images) ne fait pas encore de détection de
-  boucles (nécessite un arbre de vocabulaire COLMAP ; à ajouter, fichier libre
-  fourni par COLMAP).
+- Grandes scènes : voir ci-dessous ; la reconstruction dense et le maillage
+  d'une scène de plusieurs centaines de photos restent longs sur CPU.
 - Sans GPU, le profil ULTRA (RefineMesh CPU, pleine résolution) peut prendre
   des heures sur de grands jeux ; l'UI devra l'annoncer.
 - Les objets uniformes, brillants ou transparents restent difficiles

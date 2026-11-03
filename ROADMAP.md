@@ -24,8 +24,8 @@
   (mkcert-like) et procédure d'approbation iPhone/Android ; repli : import depuis
   la galerie.
 
-## Phase 6 — Optimisation ✅ (livrée ; reste : arbre de vocabulaire > 150 images)
-- Profils déjà en place ; ajout d'un arbre de vocabulaire pour > 150 images.
+## Phase 6 — Optimisation ✅ (livrée)
+- Grandes scènes : vocabulaire visuel COLMAP (boucles + ressemblance) au-delà de 150 photos, reconstruction globale GLOMAP à partir de 300, étalonnage partagé grâce aux EXIF ; mesuré sur 329 photos (voir PHOTOGRAMMETRY.md).
 - Nettoyage interactif (sélection, découpe, suppression, composants, simplification,
   recentrage/rotation/échelle, annulation, copie de l'original).
 - Étalonnage (2 points + distance), unités mm/cm/m, statut d'étalonnage affiché.
@@ -44,7 +44,7 @@
 - Valider l'import dans SketchUp (protocole dans TESTING.md) et ajuster le DAE si nécessaire.
 - Valider la capture sur iPhone et Android réels (certificat, résolution).
 - Valider l'installation sur Windows 11 et macOS ; installateur pour non-développeurs.
-- Arbre de vocabulaire COLMAP pour les jeux non ordonnés de plus de 150 photos.
+- Grandes scènes au-delà de quelques centaines de photos : découpage du nuage dense en sous-scènes (OpenMVS `--sub-scene-area`) pour borner la mémoire ; non mesuré ici.
 
 ## Plus tard
 - iOS/Android natifs, LiDAR avec maillage en direct (ARKit / ARCore Depth), segmentation IA de l'objet, amélioration IA des

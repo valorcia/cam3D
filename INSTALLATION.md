@@ -67,12 +67,30 @@ Point d'attention : la caméra d'un iPhone exige HTTPS (phase 5).
 | `CAM3D_BLENDER` | chemin de Blender (optionnel, validation DAE) |
 | `CAM3D_FFMPEG` | chemin de FFmpeg |
 | `CAM3D_TEST_DATASET` | dossier de photos réelles pour le test d'intégration |
+| `CAM3D_MODELS_DIR` | dossier du vocabulaire visuel COLMAP (défaut : `<dossier de données>/models`) |
+| `CAM3D_NO_DOWNLOAD` | `1` : ne jamais télécharger le vocabulaire (grandes scènes sans détection de boucles) |
 
 ## Diagnostic
 
 `cam3d doctor` affiche OS, CPU, RAM, disque, GPU, et l'état de chaque outil ;
 `cam3d doctor --json` fournit la même chose au serveur et à l'installateur.
 Le diagnostic ne télécharge rien.
+
+## Vocabulaire visuel (grandes scènes)
+
+Au-delà de 150 photos, cam3D apparie chaque photo avec ses voisines dans l'ordre
+de prise de vue et avec les photos qui lui ressemblent, et détecte les boucles
+(retour au point de départ). Il faut pour cela le vocabulaire visuel gratuit
+publié par le projet COLMAP (~72 Mo, vérifié par SHA-256). Les scripts
+d'installation le téléchargent ; sinon :
+
+```bash
+cam3d fetch-models
+```
+
+Sans ce fichier (hors ligne), cam3D le télécharge au premier scan de plus de
+150 photos ; s'il ne peut pas, la reconstruction continue avec l'appariement
+séquentiel seul et le signale dans le journal. Aucune photo n'est envoyée.
 
 ## Téléphone (même réseau Wi-Fi)
 

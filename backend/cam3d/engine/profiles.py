@@ -36,6 +36,8 @@ class QualityProfile:
     texture_resolution_level: int  # 0 = full-res images
     texture_max_size: int          # max texture atlas size
     texture_patch_packing_heuristic: int
+    # --- SfM mapper: "incremental" (most robust), "global" (GLOMAP, much faster on large captures) or "auto"
+    mapper: str = "auto"
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -37,6 +37,8 @@ class SfmResult:
     up_vector: list[float]       # estimated world "up" (unit) from camera orientations
     centroid: list[float]
     camera_center: list[float] | None = None  # mean of camera centres (to know which side was photographed)
+    matching: str = ""   # strategy actually used (exhaustive / sequential / +loops / +vocabtree)
+    mapper: str = ""     # incremental / global
 
 
 def _device(use_gpu: bool) -> "pycolmap.Device":
@@ -45,12 +47,23 @@ def _device(use_gpu: bool) -> "pycolmap.Device":
     return pycolmap.Device.cpu
 
 
+EXHAUSTIVE_MAX = 150   # beyond this, matching every pair (O(n²)) becomes too slow
+GLOBAL_MAPPER_MIN = 300  # "auto" mapper: global SfM from this many images
+
+
 def _choose_matching(profile: QualityProfile, num_images: int) -> str:
     if profile.matching != "auto":
         return profile.matching
-    # Exhaustive is the most robust; its cost is O(n²). Beyond ~150 images we
-    # switch to sequential (+loop detection) which assumes a video-like order.
-    return "exhaustive" if num_images <= 150 else "sequential"
+    # Exhaustive is the most robust; beyond ~150 images: neighbours in capture
+    # order (continuous scan) + visually similar images (vocabulary tree), which
+    # also closes loops and handles unordered imports.
+    return "exhaustive" if num_images <= EXHAUSTIVE_MAX else "sequential"
+
+
+def _choose_mapper(profile: QualityProfile, num_images: int) -> str:
+    if profile.mapper != "auto":
+        return profile.mapper
+    return "global" if num_images >= GLOBAL_MAPPER_MIN else "incremental"
 
 
 def estimate_up_vector(rec: "pycolmap.Reconstruction") -> np.ndarray:
@@ -142,16 +155,41 @@ def _run_sfm_body(work_dir, images_dir, db_path, sparse_dir, image_names, n, pro
 
     # --- 2. matching -------------------------------------------------------
     mode = _choose_matching(profile, n)
+    used = {"matching": mode, "mapper": ""}
     mopt = pycolmap.FeatureMatchingOptions()
     mopt.num_threads = threads
     mopt.guided_matching = profile.name != "fast"
-    logger.log(f"Appariement {mode} (guided={mopt.guided_matching})")
-    if mode == "sequential":
-        popt = pycolmap.SequentialPairingOptions()
-        popt.overlap = 10
-        popt.quadratic_overlap = True
-        popt.loop_detection = False  # needs a vocab tree file; see PHOTOGRAMMETRY.md
-        pycolmap.match_sequential(db_path, matching_options=mopt, pairing_options=popt, device=device, **tk)
+    if mode == "exhaustive":
+        logger.log(f"Appariement exhaustif (toutes les paires, guided={mopt.guided_matching})")
+    if mode in ("sequential", "vocabtree"):
+        from ..vocab import vocab_tree_for_run
+        vocab = vocab_tree_for_run(logger.log)
+        if mode == "sequential":
+            popt = pycolmap.SequentialPairingOptions()
+            popt.overlap = 10
+            popt.quadratic_overlap = True
+            popt.loop_detection = vocab is not None
+            if vocab is not None:
+                popt.vocab_tree_path = vocab
+                popt.loop_detection_period = 10
+                popt.loop_detection_num_images = 50
+            logger.log(f"Appariement séquentiel (10 voisines dans l'ordre de prise de vue"
+                       f"{', détection de boucles' if vocab is not None else ''})")
+            pycolmap.match_sequential(db_path, matching_options=mopt, pairing_options=popt, device=device, **tk)
+            if vocab is not None:
+                used["matching"] = "sequential+loops"
+            if cancel:
+                cancel.check()
+        if vocab is not None:
+            # images that look alike wherever they are in the capture (imports out of order, revisits)
+            vopt = pycolmap.VocabTreePairingOptions()
+            vopt.vocab_tree_path = vocab
+            vopt.num_images = 30
+            logger.log("Appariement par ressemblance visuelle (30 images les plus proches de chacune)")
+            pycolmap.match_vocabtree(db_path, matching_options=mopt, pairing_options=vopt, device=device, **tk)
+            used["matching"] = "vocabtree" if mode == "vocabtree" else used["matching"] + "+vocabtree"
+        elif mode == "vocabtree":
+            raise RuntimeError("Appariement par vocabulaire demandé mais vocabulaire indisponible (cam3d fetch-models).")
     else:
         pycolmap.match_exhaustive(db_path, matching_options=mopt, device=device, **tk)
     if cancel:
@@ -173,10 +211,26 @@ def _run_sfm_body(work_dir, images_dir, db_path, sparse_dir, image_names, n, pro
         progress["done"] += 1
         logger.progress(min(progress["done"] / n, 0.99), f"Caméra enregistrée {progress['done']}/{n}")
 
-    logger.log("Reconstruction incrémentale (poses + triangulation + ajustement de faisceaux)")
-    recs = pycolmap.incremental_mapping(
-        db_path, images_dir, sparse_dir, options=mopts, next_image_callback=_next_image, **tk,
-    )
+    mapper = _choose_mapper(profile, n)
+    used["mapper"] = mapper
+    if mapper == "global":
+        gopts = pycolmap.GlobalPipelineOptions()
+        gopts.num_threads = threads
+        gopts.min_num_matches = 15
+        gopts.multiple_models = True
+        logger.log(f"Reconstruction globale GLOMAP ({n} images : rotations puis positions de toutes les caméras "
+                   "en une fois, puis ajustement de faisceaux)")
+        logger.progress(0.05, "Reconstruction globale en cours (pas d'avancement détaillé pour cette étape)")
+        recs = pycolmap.global_mapping(db_path, images_dir, sparse_dir, options=gopts)
+        if recs:
+            # same colour extraction as the incremental mapper, for the sparse preview
+            for r in recs.values():
+                r.extract_colors_for_all_images(str(images_dir))
+    else:
+        logger.log("Reconstruction incrémentale (poses + triangulation + ajustement de faisceaux)")
+        recs = pycolmap.incremental_mapping(
+            db_path, images_dir, sparse_dir, options=mopts, next_image_callback=_next_image, **tk,
+        )
     if cancel:
         cancel.check()
     if not recs:
@@ -188,7 +242,7 @@ def _run_sfm_body(work_dir, images_dir, db_path, sparse_dir, image_names, n, pro
     best_id = max(recs, key=lambda k: recs[k].num_reg_images())
     best = recs[best_id]
     out0 = sparse_dir / "0"
-    if best_id != 0:
+    if best_id != 0 and (sparse_dir / str(best_id)).exists():
         import shutil
         tmp = sparse_dir / "best_tmp"
         shutil.move(str(sparse_dir / str(best_id)), str(tmp))
@@ -214,10 +268,17 @@ def _run_sfm_body(work_dir, images_dir, db_path, sparse_dir, image_names, n, pro
         up_vector=up.tolist(),
         centroid=centroid,
         camera_center=camera_center,
+        matching=used["matching"],
+        mapper=used["mapper"],
     )
     (work_dir / "sfm.json").write_text(json.dumps(asdict(res), indent=2), encoding="utf-8")
+    labels = {"exhaustive": "toutes les paires", "sequential": "séquentiel", "sequential+loops": "séquentiel + boucles",
+              "sequential+loops+vocabtree": "séquentiel + boucles + ressemblance", "vocabtree": "ressemblance",
+              "+vocabtree": "ressemblance"}
     msg = (f"{res.num_registered}/{n} caméras, {res.num_points} points 3D, "
-           f"erreur de reprojection {res.mean_reproj_error:.2f}px, {res.num_models} modèle(s)")
+           f"erreur de reprojection {res.mean_reproj_error:.2f}px, {res.num_models} modèle(s) "
+           f"(appariement {labels.get(res.matching, res.matching)}, reconstruction "
+           f"{'globale' if res.mapper == 'global' else 'incrémentale'})")
     if res.num_registered < max(3, int(0.5 * n)):
         logger.log("Attention : moins de la moitié des images ont été enregistrées ; la reconstruction sera partielle.")
     logger.finish(msg, **asdict(res))

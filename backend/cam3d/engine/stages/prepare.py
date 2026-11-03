@@ -51,6 +51,34 @@ def _exif_focal_35mm(img: Image.Image) -> float | None:
         return None
 
 
+def _camera_exif(img: Image.Image) -> bytes | None:
+    """Minimal EXIF for the working copy: make, model and focal length only.
+
+    COLMAP derives the focal length in pixels from FocalLengthIn35mmFilm, or from
+    FocalLength + its sensor database (make/model), both independent of the resize,
+    and lets photos of the same camera share one calibration. Orientation is not
+    kept: it is already applied to the pixels. Nothing else (GPS, dates) is copied.
+    """
+    try:
+        src = img.getexif()
+        sub = src.get_ifd(0x8769) if hasattr(src, "get_ifd") else {}
+        out = Image.Exif()
+        for tag in (0x010F, 0x0110):  # Make, Model
+            v = src.get(tag)
+            if isinstance(v, str) and v.strip():
+                out[tag] = v.strip("\x00 ")
+        ifd = out.get_ifd(0x8769)
+        for tag in (37386, 41989):  # FocalLength (mm), FocalLengthIn35mmFilm
+            v = sub.get(tag)
+            if v:
+                ifd[tag] = v
+        if not ifd and not len(out):
+            return None
+        return out.tobytes()
+    except Exception:
+        return None
+
+
 def sharpness_score(gray: np.ndarray) -> float:
     h, w = gray.shape[:2]
     if w > 800:
@@ -103,6 +131,7 @@ def prepare_images(
             logger.log(f"Ignoré {src.name}: image illisible ({e})")
             continue
         focal35 = _exif_focal_35mm(img)
+        cam_exif = _camera_exif(img)
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
         ow, oh = img.size
@@ -119,7 +148,8 @@ def prepare_images(
         used = not blurry and not too_dark and not too_bright
 
         out_name = f"{src.stem}.jpg"
-        img.save(images_dir / out_name, "JPEG", quality=jpeg_quality, subsampling=0)
+        save_kw = {"exif": cam_exif} if cam_exif else {}
+        img.save(images_dir / out_name, "JPEG", quality=jpeg_quality, subsampling=0, **save_kw)
         infos.append(ImageInfo(out_name, str(src), w, h, round(sharp, 2), round(bright, 1), focal35, blurry, too_dark, too_bright, used))
         if not used:
             reason = "floue" if blurry else "trop sombre" if too_dark else "surexposée"
