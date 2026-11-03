@@ -37,6 +37,9 @@ Téléphone (cam3D Capture, HTTPS)          Relais (Vercel Blob)                
   Sans capteurs d'orientation, la vue s'éclaircit juste après chaque image
   gardée puis redevient bleue.
 - **Photo par photo** : déclencheur manuel, appareil photo natif, galerie.
+- **Longs scans** : l'application demande au navigateur de ne pas effacer les
+  photos (stockage persistant), affiche l'espace utilisé et disponible, et
+  arrête le scan avant que le téléphone soit plein (moins de 300 Mo libres).
 - **Hors connexion** : l'application s'ouvre sans réseau (service worker) ; les
   photos restent sur le téléphone et partent automatiquement au retour du réseau.
 - **Relais chiffré** : chaque scan a sa propre clé AES-256-GCM générée sur le

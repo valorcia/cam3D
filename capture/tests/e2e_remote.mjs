@@ -97,6 +97,8 @@ await step("téléphone : scan continu (images choisies automatiquement), envoy�
   const ring = await phone.locator('[data-testid="coverage"]').innerText();
   expect(/(\d+)° du tour/.test(ring) && Number(ring.match(/(\d+)°/)[1]) >= 270, `anneau : ${ring}`);
   await waitCounter(phone, new RegExp(`^${N} photos sur ce téléphone · ${N} chiffrées en ligne$`), 90000);
+  const store = await phone.locator('[data-testid="storage"]').innerText();
+  expect(/Stockage : .+ utilisés · .+ disponibles/.test(store), `stockage : ${store}`);
 });
 
 await step("le relais ne contient que des données chiffrées", async () => {

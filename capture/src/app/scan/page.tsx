@@ -13,6 +13,7 @@ import { db, settings, type Photo, type Scan } from "@/lib/db";
 import { analyseBlob } from "@/lib/quality";
 import { relayStatus, removePhotoRemote, removeScanRemote, syncScan, transferCode, type RelayStatus } from "@/lib/relay";
 import { useOnline } from "@/lib/useOnline";
+import { ensurePersistent, formatBytes, LOW_STORAGE_BYTES, storageInfo, type StorageInfo } from "@/lib/storage";
 
 const TIPS = ["Tournez lentement autour de l’objet", "60 à 80 % de recouvrement entre deux photos", "Un 2e tour plus haut, puis plus bas", "Évitez le contre-jour et les reflets", "Pensez aux zones cachées"];
 
@@ -42,6 +43,7 @@ function ScanView() {
   const [scanning, setScanning] = useState(false);
   const [density, setDensity] = useState<keyof typeof DENSITIES>("normal");
   const [sessionCount, setSessionCount] = useState(0);
+  const [store, setStore] = useState<StorageInfo | null>(null);
   const [guide, setGuide] = useState(true);
   const covMap = useRef(new CoverageMap());
   const lastKept = useRef(-Infinity);
@@ -57,6 +59,7 @@ function ScanView() {
     setScan(s ?? null);
     const ps = await db.photos(id);
     setPhotos(ps);
+    storageInfo().then(setStore);
     setUrls((cur) => {
       const next: Record<string, string> = {};
       for (const p of ps) next[p.id] = cur[p.id] ?? URL.createObjectURL(p.blob);
@@ -170,13 +173,32 @@ function ScanView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera, camSession]);
 
+  async function savePhoto(p: Photo): Promise<boolean> {
+    try { await db.putPhoto(p); return true; } catch (e: any) {
+      setScanning(false);
+      setToast(e?.name === "QuotaExceededError" ? "Stockage du téléphone plein : scan arrêté. Envoyez ou exportez les photos, puis libérez de la place."
+        : "Photo non enregistrée sur le téléphone : scan arrêté.");
+      setTimeout(() => setToast(null), 6000);
+      return false;
+    }
+  }
+
+  // stop a long scan before the phone storage is full (writes would start failing)
+  useEffect(() => {
+    if (scanning && store && store.quota > 0 && store.quota - store.usage < LOW_STORAGE_BYTES) {
+      setScanning(false);
+      setToast(`Plus que ${formatBytes(store.quota - store.usage)} de stockage : scan arrêté. Envoyez ou exportez les photos avant de continuer.`);
+      setTimeout(() => setToast(null), 6000);
+    }
+  }, [scanning, store]);
+
   async function addFile(file: Blob, name: string, extra: Partial<Photo> = {}) {
     const p: Photo = { id: randomHex(16), scanId: id, name, type: file.type || "image/jpeg", size: file.size, created: Date.now(), blob: file, uploaded: false, ...extra };
     if (extra.auto) {  // continuous scan: frames are already selected for sharpness, keep the loop light
       lastKept.current = performance.now();
       if (extra.heading != null) { const f = currentFov(); covMap.current.mark(extra.heading, extra.pitch ?? pitchFromBand(extra.tilt) ?? 0, f.h, f.v); }
       p.sha256 = await sha256Hex(new Uint8Array(await file.arrayBuffer()));
-      await db.putPhoto(p);
+      if (!(await savePhoto(p))) return;
       setSessionCount((n) => n + 1);
       reloadSoon();
       return;
@@ -187,7 +209,7 @@ function ScanView() {
       if (q.warnings.length) { setToast(`Photo ${q.warnings.join(", ")} : reprenez-la si possible.`); setTimeout(() => setToast(null), 3000); }
     } catch { /* best effort */ }
     p.sha256 = await sha256Hex(new Uint8Array(await file.arrayBuffer()));
-    await db.putPhoto(p);
+    if (!(await savePhoto(p))) return;
     await reload();
     if (navigator.onLine) sync();
   }
@@ -204,7 +226,7 @@ function ScanView() {
   }, [photos, videoInfo]);
 
   async function toggleScan() {
-    if (!scanning) { await requestOrientation(); setSessionCount(0); }
+    if (!scanning) { await requestOrientation(); setSessionCount(0); ensurePersistent().then(() => storageInfo().then(setStore)); }
     setScanning(!scanning);
     if (scanning) { reload(); if (navigator.onLine) sync(); }
   }
@@ -340,6 +362,12 @@ function ScanView() {
       {/* strip */}
       <div>
         <p className="mb-2 text-sm" data-testid="counter">{photos.length} photo{photos.length > 1 ? "s" : ""} sur ce téléphone{scan?.relay ? ` · ${uploaded} chiffrée${uploaded > 1 ? "s" : ""} en ligne` : ""}</p>
+        {store && store.quota > 0 && (
+          <p className="-mt-1 mb-2 text-xs text-muted" data-testid="storage">
+            Stockage : {formatBytes(store.usage)} utilisés · {formatBytes(Math.max(0, store.quota - store.usage))} disponibles
+            {store.persisted === false ? " · le navigateur peut effacer ces photos s’il manque de place : envoyez-les ou exportez-les" : ""}
+          </p>
+        )}
         <div className="flex gap-2 overflow-x-auto pb-1">
           {photos.slice().reverse().map((p) => (
             <div key={p.id} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-white/5">
